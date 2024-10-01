@@ -59,7 +59,7 @@ timesteps = 100
 # compute LQR policy
 K, P = dlqr(env.A, env.B, env.Q, env.R)
 
-# compute continuous-time CBF filter
+# compute discrete-time CBF filter
 x = cs.SX.sym("x", env.ns)
 u = cs.SX.sym("u", env.na)
 u_nom = cs.SX.sym("u_nominal", env.na)
