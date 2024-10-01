@@ -19,7 +19,7 @@ class DiscreteTimeLqrEnv(gym.Env[ObsType, ActType]):
     na = 2
     dt = 0.2
     A = np.asarray([[1, 0, dt, 0], [0, 1, 0, dt], [0, 0, 1, 0], [0, 0, 0, 1]])
-    B = np.asarray([[0.5 * dt**2, 0], [0, 0.5 * dt**2], [dt, 0], [0, dt]])
+    B = np.asarray([[0, 0], [0, 0], [dt, 0], [0, dt]])
     Q = np.asarray([[10, 5, 0, 15], [5, 10, 0, 0], [0, 0, 10, 0], [15, 0, 0, 10]])
     # Q = 10.0 * np.eye(ns)
     R = np.eye(na)
@@ -52,6 +52,27 @@ class DiscreteTimeLqrEnv(gym.Env[ObsType, ActType]):
         return x_new, cost, False, False, {}
 
 
+def ho_dcbf(h, x, u, dynamics, alphas):
+    opts = {"cse": True, "allow_free": True}
+    phi = cs.Function("phi_0", [x, u], [h(x)], ["x", "u"], ["phi_0"], opts)
+    phi_eval = phi(x, u)  # does not depend on u, but is needed for the first iteration
+    degree = 1
+    for degree, alpha in enumerate(alphas, start=1):
+        name = f"phi_{degree}"
+        phi = cs.Function(
+            name,
+            [x, u],
+            [phi(dynamics(x, u), u) - phi_eval + alpha(phi_eval)],
+            ["x", "u"],
+            [name],
+            opts,
+        )
+        phi_eval = phi(x, u)
+        if cs.depends_on(phi_eval, u):  # phi.which_depends("u", [name], 2, True)[0]
+            return phi_eval, degree
+    raise ValueError(f"no dependency found till degree {degree}")
+
+
 # create env
 env = DiscreteTimeLqrEnv()
 timesteps = 100
@@ -59,12 +80,12 @@ timesteps = 100
 # compute LQR policy
 K, P = dlqr(env.A, env.B, env.Q, env.R)
 
-# compute continuous-time CBF filter
+# compute high-order discrete-time CBF filter
 x = cs.SX.sym("x", env.ns)
 u = cs.SX.sym("u", env.na)
 u_nom = cs.SX.sym("u_nominal", env.na)
-alpha = lambda y: 1.0 * y
-x_new = env.A @ x + env.B @ u
+alphas = [lambda y: 0.9 * y] * 2
+dynamics = lambda x_, u_: env.A @ x_ + env.B @ u_
 
 center1 = (-4, -2.25)
 radii1 = (1.5, 1.5)
@@ -78,7 +99,7 @@ def h1(y):
     )
 
 
-cbf_constraint1 = h1(x_new) - h1(x) + alpha(h1(x))
+cbf_constraint1, _ = ho_dcbf(h1, x, u, dynamics, alphas)
 
 center2 = (-1, -2.5)
 radii2 = (6.5, 3.5)
@@ -92,7 +113,7 @@ def h2(y):
     )
 
 
-cbf_constraint2 = h2(x_new) - h2(x) + alpha(h2(x))
+_, cbf_constraint2 = ho_dcbf(h2, x, u, dynamics, alphas)
 
 qp = {
     "x": u,
