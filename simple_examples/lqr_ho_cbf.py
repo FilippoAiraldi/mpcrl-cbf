@@ -16,12 +16,12 @@ ActType: TypeAlias = npt.NDArray[np.floating]
 
 
 class ContinuousTimeLqrEnv(gym.Env[ObsType, ActType]):
-    ns = 2
-    na = 1
-    A = np.asarray([[0.9, 0.35], [0.0, 1.1]])
-    B = np.asarray([[0.0813], [0.2]])
-    Q = np.asarray([[1.0, 0.0], [0.0, 1.0]])
-    R = np.asarray([[1.0]])
+    ns = 4
+    na = 2
+    A = np.asarray([[0, 0, 1, 0], [0, 0, 0, 1], [0, 0, 0, 0], [0, 0, 0, 0]])
+    B = np.asarray([[0, 0], [0, 0], [1, 0], [0, 1]])
+    Q = np.asarray([[10, 5, 0, 15], [5, 10, 0, 0], [0, 0, 10, 0], [15, 0, 0, 10]])
+    R = np.eye(na)
 
     def __init__(self, sampling_time: float) -> None:
         super().__init__()
@@ -34,7 +34,7 @@ class ContinuousTimeLqrEnv(gym.Env[ObsType, ActType]):
         self, *, seed: int | None = None, options: dict[str, Any] | None = None
     ) -> tuple[ObsType, dict[str, Any]]:
         super().reset(seed=seed, options=options)
-        self.x = np.asarray([-0.1, 0.15])
+        self.x = np.asarray([-5, -5, 0, 0])
         assert self.observation_space.contains(self.x), f"invalid reset state {self.x}"
         return self.x, {}
 
@@ -61,7 +61,7 @@ class ContinuousTimeLqrEnv(gym.Env[ObsType, ActType]):
 
 
 # create env
-dt = 1e-2
+dt = 5e-3
 env = ContinuousTimeLqrEnv(dt)
 timesteps = int(15 / dt)
 
@@ -72,11 +72,11 @@ K, P = lqr(env.A, env.B, env.Q, env.R)
 x = cs.SX.sym("x", env.ns)
 u = cs.SX.sym("u", env.na)
 u_nom = cs.SX.sym("u_nominal", env.na)
-alpha = lambda y: 10.0 * y
+alphas = [lambda y: 10.0 * y] * 2
 dynamics = lambda x_, u_: env.A @ x_ + env.B @ u_
 
-center1 = (0.05, 0.3)
-radii1 = (0.05, 0.1)
+center1 = (-4, -2.25)
+radii1 = (1.5, 1.5)
 
 
 def h1(y):
@@ -87,10 +87,10 @@ def h1(y):
     )
 
 
-cbf1, _ = cbf(h1, x, u, dynamics, [alpha])
+cbf1, _ = cbf(h1, x, u, dynamics, alphas)
 
-center2 = (0, 0.4)
-radii2 = (0.15, 0.5)
+center2 = (-1, -2.5)
+radii2 = (6.5, 3.5)
 
 
 def h2(y):
@@ -101,7 +101,7 @@ def h2(y):
     )
 
 
-cbf2, _ = cbf(h2, x, u, dynamics, [alpha])
+cbf2, _ = cbf(h2, x, u, dynamics, alphas)
 
 qp = {
     "x": u,
@@ -141,7 +141,7 @@ print("Costs (optimal vs actual):", cs.bilin(P, S[0]), "vs", sum(R))
 fig = plt.figure(constrained_layout=True)
 gs = GridSpec(3, 2, fig)
 
-T = np.arange(timesteps + 1) * dt
+T = np.arange(timesteps + 1)
 S = np.asarray(S)
 ax1 = fig.add_subplot(gs[0, 0])
 ax1.plot(T, S[:, 0])

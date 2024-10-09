@@ -8,7 +8,7 @@ import numpy.typing as npt
 from gymnasium.spaces import Box
 from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Ellipse
-from mpcrl.util.control import dlqr
+from mpcrl.util.control import dcbf, dlqr
 
 ObsType: TypeAlias = npt.NDArray[np.floating]
 ActType: TypeAlias = npt.NDArray[np.floating]
@@ -52,27 +52,6 @@ class DiscreteTimeLqrEnv(gym.Env[ObsType, ActType]):
         return x_new, cost, False, False, {}
 
 
-def ho_dcbf(h, x, u, dynamics, alphas):
-    opts = {"cse": True, "allow_free": True}
-    phi = cs.Function("phi_0", [x, u], [h(x)], ["x", "u"], ["phi_0"], opts)
-    phi_eval = phi(x, u)  # does not depend on u, but is needed for the first iteration
-    degree = 1
-    for degree, alpha in enumerate(alphas, start=1):
-        name = f"phi_{degree}"
-        phi = cs.Function(
-            name,
-            [x, u],
-            [phi(dynamics(x, u), u) - phi_eval + alpha(phi_eval)],
-            ["x", "u"],
-            [name],
-            opts,
-        )
-        phi_eval = phi(x, u)
-        if cs.depends_on(phi_eval, u):  # phi.which_depends("u", [name], 2, True)[0]
-            return phi_eval, degree
-    raise ValueError(f"no dependency found till degree {degree}")
-
-
 # create env
 env = DiscreteTimeLqrEnv()
 timesteps = 100
@@ -99,7 +78,7 @@ def h1(y):
     )
 
 
-cbf_constraint1, _ = ho_dcbf(h1, x, u, dynamics, alphas)
+cbf1, _ = dcbf(h1, x, u, dynamics, alphas)
 
 center2 = (-1, -2.5)
 radii2 = (6.5, 3.5)
@@ -113,13 +92,13 @@ def h2(y):
     )
 
 
-_, cbf_constraint2 = ho_dcbf(h2, x, u, dynamics, alphas)
+cbf2, _ = dcbf(h2, x, u, dynamics, alphas)
 
 qp = {
     "x": u,
     "p": cs.vertcat(x, u_nom),
     "f": cs.sumsqr(u - u_nom),
-    "g": cs.vertcat(cbf_constraint1, cbf_constraint2),
+    "g": cs.vertcat(cbf1(x, u), cbf2(x, u)),
 }
 opts = {
     "error_on_fail": True,

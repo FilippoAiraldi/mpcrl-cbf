@@ -8,7 +8,7 @@ import numpy.typing as npt
 from gymnasium.spaces import Box
 from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Ellipse
-from mpcrl.util.control import dlqr
+from mpcrl.util.control import dcbf, dlqr
 
 ObsType: TypeAlias = npt.NDArray[np.floating]
 ActType: TypeAlias = npt.NDArray[np.floating]
@@ -64,7 +64,7 @@ x = cs.SX.sym("x", env.ns)
 u = cs.SX.sym("u", env.na)
 u_nom = cs.SX.sym("u_nominal", env.na)
 alpha = lambda y: 1.0 * y
-x_new = env.A @ x + env.B @ u
+dynamics = lambda x_, u_: env.A @ x_ + env.B @ u_
 
 center1 = (-4, -2.25)
 radii1 = (1.5, 1.5)
@@ -78,7 +78,7 @@ def h1(y):
     )
 
 
-cbf_constraint1 = h1(x_new) - h1(x) + alpha(h1(x))
+cbf1, _ = dcbf(h1, x, u, dynamics, [alpha])
 
 center2 = (-1, -2.5)
 radii2 = (6.5, 3.5)
@@ -92,13 +92,13 @@ def h2(y):
     )
 
 
-cbf_constraint2 = h2(x_new) - h2(x) + alpha(h2(x))
+cbf2, _ = dcbf(h2, x, u, dynamics, [alpha])
 
 qp = {
     "x": u,
     "p": cs.vertcat(x, u_nom),
     "f": cs.sumsqr(u - u_nom),
-    "g": cs.vertcat(cbf_constraint1, cbf_constraint2),
+    "g": cs.vertcat(cbf1(x, u), cbf2(x, u)),
 }
 opts = {
     "error_on_fail": True,
