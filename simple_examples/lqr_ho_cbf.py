@@ -23,6 +23,12 @@ class ContinuousTimeLqrEnv(gym.Env[ObsType, ActType]):
     Q = np.asarray([[10, 5, 0, 15], [5, 10, 0, 0], [0, 0, 10, 0], [15, 0, 0, 10]])
     R = np.eye(na)
 
+    # obstacles' centers and radii
+    center1 = (-4, -2.25)
+    radii1 = (1.5, 1.5)
+    center2 = (-1, -2.5)
+    radii2 = (6.5, 3.5)
+
     def __init__(self, sampling_time: float) -> None:
         super().__init__()
         self.observation_space = Box(-np.inf, np.inf, (self.ns,), np.float64)
@@ -59,6 +65,21 @@ class ContinuousTimeLqrEnv(gym.Env[ObsType, ActType]):
         self.x = x_new
         return x_new, cost, False, False, {}
 
+    def obstacle_constraints(
+        self, y: np.ndarray | cs.SX
+    ) -> tuple[np.ndarray, np.ndarray] | tuple[cs.SX, cs.SX]:
+        h1 = (
+            (y[0] - self.center1[0]) ** 2 / self.radii1[0] ** 2
+            + (y[1] - self.center1[1]) ** 2 / self.radii1[1] ** 2
+            - 1
+        )
+        h2 = (
+            1
+            - (y[0] - self.center2[0]) ** 2 / self.radii2[0] ** 2
+            - (y[1] - self.center2[1]) ** 2 / self.radii2[1] ** 2
+        )
+        return h1, h2
+
 
 # create env
 dt = 5e-3
@@ -74,35 +95,8 @@ u = cs.SX.sym("u", env.na)
 u_nom = cs.SX.sym("u_nominal", env.na)
 alphas = [lambda y: 10.0 * y] * 2
 dynamics = lambda x_, u_: env.A @ x_ + env.B @ u_
-
-center1 = (-4, -2.25)
-radii1 = (1.5, 1.5)
-
-
-def h1(y):
-    return (
-        (y[0] - center1[0]) ** 2 / radii1[0] ** 2
-        + (y[1] - center1[1]) ** 2 / radii1[1] ** 2
-        - 1
-    )
-
-
-cbf1, _ = cbf(h1, x, u, dynamics, alphas)
-
-center2 = (-1, -2.5)
-radii2 = (6.5, 3.5)
-
-
-def h2(y):
-    return (
-        1
-        - (y[0] - center2[0]) ** 2 / radii2[0] ** 2
-        - (y[1] - center2[1]) ** 2 / radii2[1] ** 2
-    )
-
-
-cbf2, _ = cbf(h2, x, u, dynamics, alphas)
-
+cbf1 = cbf(lambda x_: env.obstacle_constraints(x_)[0], x, u, dynamics, alphas)
+cbf2 = cbf(lambda x_: env.obstacle_constraints(x_)[1], x, u, dynamics, alphas)
 qp = {
     "x": u,
     "p": cs.vertcat(x, u_nom),
@@ -152,8 +146,10 @@ ax2.set_xlabel("$t$")
 ax2.set_ylabel("$x_2$")
 
 ax3 = fig.add_subplot(gs[:2, 1])
-ellipse1 = Ellipse(center1, radii1[0] * 2, radii1[1] * 2, facecolor="k", alpha=0.25)
-ellipse2 = Ellipse(center2, radii2[0] * 2, radii2[1] * 2, facecolor="w")
+ellipse1 = Ellipse(
+    env.center1, env.radii1[0] * 2, env.radii1[1] * 2, facecolor="k", alpha=0.25
+)
+ellipse2 = Ellipse(env.center2, env.radii2[0] * 2, env.radii2[1] * 2, facecolor="w")
 ax3.patch.set_facecolor("k")
 ax3.patch.set_alpha(0.25)
 ax3.add_patch(ellipse2)
