@@ -52,28 +52,26 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
     B = np.asarray([[1.0, 0.05], [0.5, 1.0]])
     Q = np.eye(ns)
     R = 0.1 * np.eye(na)
-    a_bounds = np.asarray([[-0.5, -0.5], [0.5, 0.5]])
-    x_soft_bounds = np.asarray([[-3.0, -3.0], [3.0, 3.0]])
+    a_bound = 0.5
+    x_soft_bound = 3.0
 
     def __init__(self, constraint_penalty: float = 1e2) -> None:
         super().__init__()
         self.observation_space = gym.spaces.Box(-np.inf, np.inf, (self.ns,), np.float64)
-        self.action_space = gym.spaces.Box(*self.a_bounds, (self.na,), np.float64)
+        self.action_space = gym.spaces.Box(
+            -self.a_bound, self.a_bound, (self.na,), np.float64
+        )
         self.constraint_penalty = constraint_penalty
-        vertices = [
-            self.x_soft_bounds[0],
-            [self.x_soft_bounds[1, 0], self.x_soft_bounds[0, 1]],
-            self.x_soft_bounds[1],
-            [self.x_soft_bounds[0, 0], self.x_soft_bounds[1, 1]],
-        ]
-        self._sampler = ConvexPolytopeUniformSampler(vertices)
+        x_max = self.x_soft_bound
+        self._sampler = ConvexPolytopeUniformSampler(
+            [[-x_max, -x_max], [x_max, -x_max], [x_max, x_max], [-x_max, x_max]]
+        )
 
         # build also the symbolic dynamics and safety constraints
         x = cs.MX.sym("x", self.ns)
         u = cs.MX.sym("u", self.na)
         x_next = self.A @ x + self.B @ u
-        x_lb, x_ub = self.x_soft_bounds
-        h = cs.veccat(x - x_lb, x_ub - x)
+        h = cs.veccat(x + x_max, x_max - x)
         self.dynamics = cs.Function("f", [x, u], [x_next], ["x", "u"], ["x_next"])
         self.safety_constraints = cs.Function("h", [x], [h], ["x"], ["h"])
 
@@ -86,7 +84,7 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
         if sample_on_contour:
             x = self._sampler.sample_from_surface()
         else:
-            for _ in range(1000):
+            for _ in range(100):
                 x = x = self._sampler.sample_from_interior()
                 if np.linalg.norm(x) >= 2.5:
                     break
@@ -105,8 +103,8 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
         return x_new, self._compute_cost(x, u), False, False, {}
 
     def _compute_cost(self, x: ObsType, u: ActType) -> float:
-        lb_violation = np.maximum(0, self.x_soft_bounds[0] - x).sum()
-        ub_violation = np.maximum(0, x - self.x_soft_bounds[1]).sum()
+        lb_violation = np.maximum(0, -self.x_soft_bound - x).sum()
+        ub_violation = np.maximum(0, x - self.x_soft_bound).sum()
         return (
             np.dot(np.dot(self.Q, x), x)
             + np.dot(np.dot(self.R, u), u)
