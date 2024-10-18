@@ -101,7 +101,7 @@ qp = {
     "x": u,
     "p": cs.vertcat(x, u_nom),
     "f": cs.sumsqr(u - u_nom),
-    "g": cs.vertcat(cbf1(x, u), cbf2(x, u)),
+    "g": cs.vertcat(cbf1, cbf2),
 }
 opts = {
     "error_on_fail": True,
