@@ -139,5 +139,5 @@ libpardiso.lib
 pardiso.lic
 tmp_casadi_compiler*.o
 tmp_casadi_compiler*.so
-lti_example/matlab/*
-!lti_example/matlab/*.m
+lti_example/value_func/*/
+lti_example/value_func/*.m
