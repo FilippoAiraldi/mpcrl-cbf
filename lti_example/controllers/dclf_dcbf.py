@@ -64,4 +64,4 @@ def get_controller(
     def _f(x):
         return controller(x).full().reshape(na)
 
-    return controller
+    return _f
