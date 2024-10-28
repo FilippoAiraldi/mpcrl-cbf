@@ -10,6 +10,7 @@ import numpy.typing as npt
 from csnlp.util.io import save
 from env import ConstrainedLtiEnv as Env
 from joblib import Parallel, delayed
+from plot import plot_states_and_actions_and_return
 
 
 def simulate_once(
@@ -17,7 +18,7 @@ def simulate_once(
     timesteps: int,
     seed: int,
     **reset_kwargs: Any,
-) -> tuple[npt.NDArray[np.floating], npt.NDArray[np.floating]]:
+) -> tuple[npt.NDArray[np.floating], npt.NDArray[np.floating], float]:
     """Simulates one episode of the constrained LTI environment using the given
     controller.
 
@@ -34,9 +35,9 @@ def simulate_once(
 
     Returns
     -------
-    tuple of two arrays
+    tuple of two arrays and float
         The first array contains the state trajectory, and the second array contains
-        the action trajectory.
+        the action trajectory. The float is the total cost of the episode.
     """
     if reset_kwargs is None:
         reset_kwargs = {}
@@ -45,12 +46,14 @@ def simulate_once(
     X = np.empty((timesteps + 1, env.ns))
     X[0] = x
     U = np.empty((timesteps, env.na))
+    cost = 0.0
     for i in range(timesteps):
-        u = np.reshape(controller(x), env.na)
-        x, _, _, _, _ = env.step(u)
+        u = controller(x)
+        x, c, _, _, _ = env.step(u)
         X[i + 1] = x
         U[i] = u
-    return X, U
+        cost += c
+    return X, U, cost
 
 
 if __name__ == "__main__":
@@ -113,7 +116,8 @@ if __name__ == "__main__":
         )
         for seed in seeds
     )
-    states, actions = map(np.asarray, zip(*data))
+    keys = ("states", "actions", "cost")
+    data_dict = dict(zip(keys, map(np.asarray, zip(*data))))
 
     # finally, store and plot the results. If no filepath is passed, always plot
     if args.save:
@@ -121,16 +125,7 @@ if __name__ == "__main__":
         if not path.is_dir():
             path = "lti_example" / path
         path.mkdir(parents=True, exist_ok=True)
-        save(
-            str(path / args.save),
-            states=states,
-            actions=actions,
-            args=args,
-            compression="matlab",
-        )
+        save(str(path / args.save), **data_dict, args=args, compression="matlab")
     if args.plot or not args.save:
-        import matplotlib.pyplot as plt
-        from plot import plot_states_and_actions
-
-        plot_states_and_actions([{"states": states, "actions": actions}])
+        plot_states_and_actions_and_return([data_dict])
         plt.show()

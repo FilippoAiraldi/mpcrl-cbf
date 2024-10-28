@@ -34,15 +34,16 @@ def load_single_file(
     return args, data
 
 
-def plot_states_and_actions(
+def plot_states_and_actions_and_return(
     data: Collection[dict[str, npt.NDArray[np.floating]]],
 ) -> None:
     fig = plt.figure(constrained_layout=True)
-    gs = GridSpec(2, 2, fig)
+    gs = GridSpec(3, 2, fig)
     lw = 1.0
     ax1 = fig.add_subplot(gs[:, 0])
     ax2 = fig.add_subplot(gs[0, 1])
     ax3 = fig.add_subplot(gs[1, 1], sharex=ax2)
+    ax4 = fig.add_subplot(gs[2, 1])
 
     x_max = Env.x_soft_bound
     ax1.add_patch(Rectangle((-x_max, -x_max), 2 * x_max, 2 * x_max, fill=False))
@@ -50,13 +51,16 @@ def plot_states_and_actions(
     for i, datum in enumerate(data):
         states = datum["states"]  # n_sim x timesteps + 1 x ns
         actions = datum["actions"]  # n_sim x timesteps x na
+        returns = datum["cost"]  # n_sim
         timesteps = np.arange(actions.shape[1])
         c = f"C{i}"
+
         ax1.plot(*states[:, 0].T, c, ls="none", marker=".", markersize=3)
         for state_trajectory, action_trajectory in zip(states, actions):
             ax1.plot(*state_trajectory.T, c, lw=lw)
             ax2.step(timesteps, action_trajectory[:, 0], c, lw=lw, where="post")
             ax3.step(timesteps, action_trajectory[:, 1], c, lw=lw, where="post")
+        ax4.plot(returns, c, lw=lw)
 
     ax1.set_xlabel("$x_1$")
     ax1.set_ylabel("$x_2$")
@@ -64,6 +68,8 @@ def plot_states_and_actions(
     ax2.set_ylabel("$u_1$")
     ax3.set_ylabel("$u_2$")
     ax3.set_xlabel("$k$")
+    ax4.set_xlabel("Episode")
+    ax4.set_ylabel("Cost")
 
 
 if __name__ == "__main__":
@@ -85,5 +91,5 @@ if __name__ == "__main__":
         data.append(datum)
         print(filename.upper(), f"Args: {sim_args}\n", sep="\n")
 
-    plot_states_and_actions(data)
+    plot_states_and_actions_and_return(data)
     plt.show()
