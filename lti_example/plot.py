@@ -49,17 +49,21 @@ def plot_states_and_actions_and_return(
     ax1.add_patch(Rectangle((-x_max, -x_max), 2 * x_max, 2 * x_max, fill=False))
 
     for i, datum in enumerate(data):
-        states = datum["states"]  # n_sim x timesteps + 1 x ns
-        actions = datum["actions"]  # n_sim x timesteps x na
         returns = datum["cost"]  # n_sim
-        timesteps = np.arange(actions.shape[1])
+        actions = datum["actions"]  # n_sim x [timesteps x na]
+        states = datum["states"]  # n_sim x [timesteps + 1 x ns]
+        timesteps = [a.shape[0] for a in actions]  # n_sim
+        t_max = max(timesteps)
         c = f"C{i}"
 
         ax1.plot(*states[:, 0].T, c, ls="none", marker=".", markersize=3)
-        for state_trajectory, action_trajectory in zip(states, actions):
-            ax1.plot(*state_trajectory.T, c, lw=lw)
-            ax2.step(timesteps, action_trajectory[:, 0], c, lw=lw, where="post")
-            ax3.step(timesteps, action_trajectory[:, 1], c, lw=lw, where="post")
+        for t, state_trajectory, action_trajectory in zip(timesteps, states, actions):
+            ax1.plot(*state_trajectory[: t + 1].T, c, lw=lw)
+            if t < t_max:  # episode was shorter than other simulations
+                ax1.plot(*state_trajectory[: t + 1].T, c, marker="x", markersize=3)
+            time = np.arange(t)
+            ax2.step(time, action_trajectory[:t, 0], c, lw=lw, where="post")
+            ax3.step(time, action_trajectory[:t, 1], c, lw=lw, where="post")
         ax4.plot(returns, c, lw=lw)
 
     ax1.set_xlabel("$x_1$")

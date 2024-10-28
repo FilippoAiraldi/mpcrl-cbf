@@ -1,5 +1,4 @@
 from collections.abc import Callable
-from typing import Any
 
 import casadi as cs
 import numpy as np
@@ -43,9 +42,9 @@ u_dclf_dcbf = clip(u[:, 0], -env.a_bound, env.a_bound)
 func = nlp.to_function("dclf_dcbf_qcqp", [x, primals], [u_dclf_dcbf, primals])
 
 
-def get_dclf_dcbf_controller(
-    *_: Any, **__: Any
-) -> Callable[[npt.NDArray[np.floating]], npt.NDArray[np.floating]]:
+def get_dclf_dcbf_controller() -> (
+    Callable[[npt.NDArray[np.floating]], npt.NDArray[np.floating]]
+):
     """Returns the discrete-time LQR controller with action saturation.
 
     Returns

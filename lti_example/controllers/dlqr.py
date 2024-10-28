@@ -1,5 +1,4 @@
 from collections.abc import Callable
-from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -10,9 +9,9 @@ K, _ = dlqr(Env.A, Env.B, Env.Q, Env.R)
 a_min = Env.a_bound
 
 
-def get_controller(
-    *_: Any, **__: Any
-) -> Callable[[npt.NDArray[np.floating]], npt.NDArray[np.floating]]:
+def get_dlqr_controller() -> (
+    Callable[[npt.NDArray[np.floating]], npt.NDArray[np.floating]]
+):
     """Returns the discrete-time LQR controller with action saturation.
 
     Returns

@@ -1,24 +1,27 @@
 import argparse
 from collections.abc import Callable
-from importlib import import_module
 from pathlib import Path
 from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
+from controllers.dclf_dcbf import get_dclf_dcbf_controller
+from controllers.dlqr import get_dlqr_controller
 from csnlp.util.io import save
 from env import ConstrainedLtiEnv as Env
+from gymnasium.wrappers import TimeLimit
 from joblib import Parallel, delayed
+from mpcrl.wrappers.envs import MonitorEpisodes
 from plot import plot_states_and_actions_and_return
 
 
-def simulate_once(
+def simulate_controller_once(
     controller: Callable[[npt.NDArray[np.floating]], npt.NDArray[np.floating]],
     timesteps: int,
     seed: int,
     **reset_kwargs: Any,
-) -> tuple[npt.NDArray[np.floating], npt.NDArray[np.floating], float]:
+) -> tuple[float, npt.NDArray[np.floating], npt.NDArray[np.floating]]:
     """Simulates one episode of the constrained LTI environment using the given
     controller.
 
@@ -35,25 +38,22 @@ def simulate_once(
 
     Returns
     -------
-    tuple of two arrays and float
-        The first array contains the state trajectory, and the second array contains
-        the action trajectory. The float is the total cost of the episode.
+    float, and tuple of two arrays
+        Returns the total cost of the episode and a tuple of two arrays containing
+        action and state trajectories, respectively.
     """
     if reset_kwargs is None:
         reset_kwargs = {}
-    env = Env()
+    env = MonitorEpisodes(TimeLimit(Env(), timesteps), deque_size=1)
     x, _ = env.reset(seed=seed, options=reset_kwargs)
-    X = np.empty((timesteps + 1, env.ns))
-    X[0] = x
-    U = np.empty((timesteps, env.na))
-    cost = 0.0
-    for i in range(timesteps):
+    terminated = truncated = False
+    while not (terminated or truncated):
         u = controller(x)
-        x, c, _, _, _ = env.step(u)
-        X[i + 1] = x
-        U[i] = u
-        cost += c
-    return X, U, cost
+        x, _, terminated, truncated, _ = env.step(u)
+    R = env.rewards[0].sum()
+    U = env.actions[0]
+    X = env.observations[0]
+    return R, U, X
 
 
 if __name__ == "__main__":
@@ -103,20 +103,24 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # get the controller
-    controller_module_name = "controllers." + args.controller.replace("-", "_")
-    controller_module = import_module(controller_module_name)
-    controller = getattr(controller_module, "get_controller")()
+    controller_name = args.controller
+    if controller_name == "dlqr":
+        controller = get_dlqr_controller()
+    elif controller_name == "dclf-dcbf":
+        controller = get_dclf_dcbf_controller()
+    else:
+        raise RuntimeError(f"Unknown controller: {controller_name}")
 
     # run the simulations (possibly in parallel asynchronously)
     ic_on_contour = args.init_conditions == "contour"
     seeds = np.random.SeedSequence(args.seed).generate_state(args.n_sim)
     data = Parallel(n_jobs=args.n_jobs, verbose=10, return_as="generator_unordered")(
-        delayed(simulate_once)(
+        delayed(simulate_controller_once)(
             controller, args.timesteps, int(seed), contour=ic_on_contour
         )
         for seed in seeds
     )
-    keys = ("states", "actions", "cost")
+    keys = ("cost", "actions", "states")
     data_dict = dict(zip(keys, map(np.asarray, zip(*data))))
 
     # finally, store and plot the results. If no filepath is passed, always plot
@@ -125,7 +129,7 @@ if __name__ == "__main__":
         if not path.is_dir():
             path = "lti_example" / path
         path.mkdir(parents=True, exist_ok=True)
-        save(str(path / args.save), **data_dict, args=args, compression="matlab")
+        save(str(path / args.save), **data_dict, args=args, compression="lzma")
     if args.plot or not args.save:
         plot_states_and_actions_and_return([data_dict])
         plt.show()
