@@ -1,7 +1,7 @@
 numpy==2.0.2
 scipy==1.14.1
 casadi==3.6.7
-gymnasium==0.29.1
+gymnasium==1.0.0
 matplotlib==3.9.2
 numba==0.60.0
 csnlp==1.6.3rc1

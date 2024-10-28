@@ -1,3 +1,5 @@
+import os
+import sys
 from typing import Any, TypeAlias, TypeVar
 
 import casadi as cs
@@ -5,6 +7,10 @@ import gymnasium as gym
 import numpy as np
 import numpy.typing as npt
 from mpcrl.util.geometry import ConvexPolytopeUniformSampler
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
+from util.loose_box import LooseBox
 
 ObsType: TypeAlias = npt.NDArray[np.floating]
 ActType: TypeAlias = npt.NDArray[np.floating]
@@ -57,12 +63,11 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
 
     def __init__(self, constraint_penalty: float = 1e2) -> None:
         super().__init__()
-        self.observation_space = gym.spaces.Box(-np.inf, np.inf, (self.ns,), np.float64)
-        self.action_space = gym.spaces.Box(
-            -self.a_bound, self.a_bound, (self.na,), np.float64
-        )
-        self.constraint_penalty = constraint_penalty
+        a_max = self.a_bound
         x_max = self.x_soft_bound
+        self.observation_space = LooseBox(-np.inf, np.inf, (self.ns,), np.float64)
+        self.action_space = LooseBox(-a_max, a_max, (self.na,), np.float64)
+        self.constraint_penalty = constraint_penalty
         self._sampler = ConvexPolytopeUniformSampler(
             [[-x_max, -x_max], [x_max, -x_max], [x_max, x_max], [-x_max, x_max]]
         )
