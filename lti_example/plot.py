@@ -36,7 +36,18 @@ def load_single_file(
 
 def plot_states_and_actions_and_return(
     data: Collection[dict[str, list[npt.NDArray[np.floating]]]],
+    names: Collection[str] | None = None,
 ) -> None:
+    """Plots the state trajectories, actions, and returns of the simulations.
+
+    Parameters
+    ----------
+    data : collection of dictionaries (str, list of arrays)
+        The dictionaries from different simulations, each containing the keys "cost",
+        "actions", and "states".
+    names : collection of str, optional
+        The names of the simulations to use in the plot.
+    """
     fig = plt.figure(constrained_layout=True)
     gs = GridSpec(3, 2, fig)
     lw = 1.0
@@ -66,7 +77,10 @@ def plot_states_and_actions_and_return(
             time = np.arange(t)
             ax2.step(time, action_traj[:t, 0], c, lw=lw, where="post")
             ax3.step(time, action_traj[:t, 1], c, lw=lw, where="post")
-        ax4.plot(returns, c, lw=lw)
+
+        ax4.violinplot(returns, [i], showmeans=True, showextrema=False)
+        pos = i + np.random.uniform(-0.01, 0.01, size=len(returns))
+        ax4.scatter(pos, returns, s=10, facecolor="none", edgecolors=c)
 
     ax1.set_xlabel("$x_1$")
     ax1.set_ylabel("$x_2$")
@@ -74,7 +88,9 @@ def plot_states_and_actions_and_return(
     ax2.set_ylabel("$u_1$")
     ax3.set_ylabel("$u_2$")
     ax3.set_xlabel("$k$")
-    ax4.set_xlabel("Episode")
+    ax4.set_xticks(range(len(data)))
+    if names is not None:
+        ax4.set_xticklabels(names)
     ax4.set_ylabel("Cost")
 
 
@@ -92,10 +108,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     data = []
-    for filename in set(args.filename):
+    unique_names = []
+    for filename in args.filename:
+        if filename in unique_names:
+            continue
         sim_args, datum = load_single_file(filename)
+        unique_names.append(filename)
         data.append(datum)
         print(filename.upper(), f"Args: {sim_args}\n", sep="\n")
 
-    plot_states_and_actions_and_return(data)
+    plot_states_and_actions_and_return(data, unique_names)
     plt.show()
