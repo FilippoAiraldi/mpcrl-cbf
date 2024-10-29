@@ -54,12 +54,26 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
 
     ns = 2
     na = 2
-    A = np.asarray([[1.0, 0.4], [-0.1, 1.0]])
+    A = np.asarray([[1.0, 0.8], [-0.1, 1.0]])
     B = np.asarray([[1.0, 0.05], [0.5, 1.0]])
     Q = np.eye(ns)
     R = 0.1 * np.eye(na)
     a_bound = 0.5
     x_soft_bound = 3.0
+    vertices = np.asarray(
+        [
+            [0.888157894736856, -3.0],
+            [2.222222222222287, 1.628472222222204],
+            [-2.222222222222204, -1.628472222222197],
+            [0.781893004115253, 2.456661522633749],
+            [-0.781893004115105, -2.456661522633779],
+            [-3.0, -0.656249999999953],
+            [-0.888157894736802, 3.0],
+            [-3.0, 3.0],
+            [3.0, 0.656250000000065],
+            [3.0, -3.0],
+        ]
+    )
     constraint_penalty = 1e3
 
     def __init__(self) -> None:
@@ -68,9 +82,7 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
         x_max = self.x_soft_bound
         self.observation_space = LooseBox(-np.inf, np.inf, (self.ns,), np.float64)
         self.action_space = LooseBox(-a_max, a_max, (self.na,), np.float64)
-        self._sampler = ConvexPolytopeUniformSampler(
-            [[-x_max, -x_max], [x_max, -x_max], [x_max, x_max], [-x_max, x_max]]
-        )
+        self._sampler = ConvexPolytopeUniformSampler(self.vertices)
 
         # build also the symbolic dynamics and safety constraints
         x = cs.MX.sym("x", self.ns)
