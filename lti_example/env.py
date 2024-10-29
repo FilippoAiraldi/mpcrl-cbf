@@ -60,14 +60,14 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
     R = 0.1 * np.eye(na)
     a_bound = 0.5
     x_soft_bound = 3.0
+    constraint_penalty = 1e3
 
-    def __init__(self, constraint_penalty: float = 1e2) -> None:
+    def __init__(self) -> None:
         super().__init__()
         a_max = self.a_bound
         x_max = self.x_soft_bound
         self.observation_space = LooseBox(-np.inf, np.inf, (self.ns,), np.float64)
         self.action_space = LooseBox(-a_max, a_max, (self.na,), np.float64)
-        self.constraint_penalty = constraint_penalty
         self._sampler = ConvexPolytopeUniformSampler(
             [[-x_max, -x_max], [x_max, -x_max], [x_max, x_max], [-x_max, x_max]]
         )

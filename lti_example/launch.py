@@ -6,8 +6,11 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
-from controllers.dclf_dcbf import get_dclf_dcbf_controller
-from controllers.dlqr import get_dlqr_controller
+from controllers import (
+    get_dclf_dcbf_controller,
+    get_dlqr_controller,
+    get_mpc_controller,
+)
 from csnlp.util.io import save
 from env import ConstrainedLtiEnv as Env
 from gymnasium.wrappers import TimeLimit
@@ -67,7 +70,7 @@ if __name__ == "__main__":
     group = parser.add_argument_group("Controller options")
     group.add_argument(
         "controller",
-        choices=["dlqr", "dclf-dcbf"],
+        choices=["dlqr", "dclf-dcbf", "mpc"],
         help="The controller to use for the simulation.",
     )
     group = parser.add_argument_group("Simulation options")
@@ -111,6 +114,8 @@ if __name__ == "__main__":
         controller = get_dlqr_controller()
     elif controller_name == "dclf-dcbf":
         controller = get_dclf_dcbf_controller()
+    elif controller_name == "mpc":
+        controller = get_mpc_controller(20, True)
     else:
         raise RuntimeError(f"Unknown controller: {controller_name}")
 
