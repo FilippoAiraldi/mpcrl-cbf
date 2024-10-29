@@ -12,7 +12,6 @@ from csnlp.util.io import save
 from env import ConstrainedLtiEnv as Env
 from gymnasium.wrappers import TimeLimit
 from joblib import Parallel, delayed
-from mpcrl.wrappers.envs import MonitorEpisodes
 from plot import plot_states_and_actions_and_return
 
 
@@ -21,7 +20,7 @@ def simulate_controller_once(
     timesteps: int,
     seed: int,
     **reset_kwargs: Any,
-) -> tuple[float, npt.NDArray[np.floating], npt.NDArray[np.floating]]:
+) -> tuple[float, list[npt.NDArray[np.floating]], list[npt.NDArray[np.floating]]]:
     """Simulates one episode of the constrained LTI environment using the given
     controller.
 
@@ -38,21 +37,24 @@ def simulate_controller_once(
 
     Returns
     -------
-    float, and tuple of two arrays
-        Returns the total cost of the episode and a tuple of two arrays containing
-        action and state trajectories, respectively.
+    float, and tuple of two lists of arrays
+        Returns the total cost of the episode and a tuple of two lists containing
+        actions and states arrays, respectively.
     """
     if reset_kwargs is None:
         reset_kwargs = {}
-    env = MonitorEpisodes(TimeLimit(Env(), timesteps), deque_size=1)
+    env = TimeLimit(Env(), timesteps)
     x, _ = env.reset(seed=seed, options=reset_kwargs)
+    R = 0.0
+    U = []
+    X = [x]
     terminated = truncated = False
     while not (terminated or truncated):
         u = controller(x)
-        x, _, terminated, truncated, _ = env.step(u)
-    R = env.rewards[0].sum()
-    U = env.actions[0]
-    X = env.observations[0]
+        x, r, terminated, truncated, _ = env.step(u)
+        R += r
+        U.append(u)
+        X.append(x)
     return R, U, X
 
 
@@ -88,7 +90,8 @@ if __name__ == "__main__":
         "--save",
         type=str,
         default="",
-        help="Save results under controllers/data. If not set, no data is saved.",
+        help="Saves with this filename the results under controllers/data. If not set,"
+        " no data is saved.",
     )
     group.add_argument(
         "--plot",
@@ -120,8 +123,11 @@ if __name__ == "__main__":
         )
         for seed in seeds
     )
-    keys = ("cost", "actions", "states")
-    data_dict = dict(zip(keys, map(np.asarray, zip(*data))))
+    data_dict: dict[str, list[np.ndarray]] = {"cost": [], "actions": [], "states": []}
+    for datum_cost, datum_actions, datum_states in data:
+        data_dict["cost"].append(datum_cost)
+        data_dict["actions"].append(np.asarray(datum_actions))
+        data_dict["states"].append(np.asarray(datum_states))
 
     # finally, store and plot the results. If no filepath is passed, always plot
     if args.save:
@@ -129,7 +135,8 @@ if __name__ == "__main__":
         if not path.is_dir():
             path = "lti_example" / path
         path.mkdir(parents=True, exist_ok=True)
-        save(str(path / args.save), **data_dict, args=args, compression="lzma")
+        fn = str(path / args.save)
+        save(fn, **data_dict, args=args.__dict__, compression="lzma")
     if args.plot or not args.save:
         plot_states_and_actions_and_return([data_dict])
         plt.show()

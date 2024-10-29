@@ -15,7 +15,7 @@ plt.style.use("seaborn-v0_8-pastel")
 
 def load_single_file(
     filename: str,
-) -> tuple[dict[str, Any], dict[str, npt.NDArray[np.floating]]]:
+) -> tuple[dict[str, Any], dict[str, list[npt.NDArray[np.floating]]]]:
     """Loads the data from a single file on disk.
 
     Parameters
@@ -35,7 +35,7 @@ def load_single_file(
 
 
 def plot_states_and_actions_and_return(
-    data: Collection[dict[str, npt.NDArray[np.floating]]],
+    data: Collection[dict[str, list[npt.NDArray[np.floating]]]],
 ) -> None:
     fig = plt.figure(constrained_layout=True)
     gs = GridSpec(3, 2, fig)
@@ -56,14 +56,16 @@ def plot_states_and_actions_and_return(
         t_max = max(timesteps)
         c = f"C{i}"
 
-        ax1.plot(*states[:, 0].T, c, ls="none", marker=".", markersize=3)
-        for t, state_trajectory, action_trajectory in zip(timesteps, states, actions):
-            ax1.plot(*state_trajectory[: t + 1].T, c, lw=lw)
+        for t, state_traj, action_traj in zip(timesteps, states, actions):
+            ax1.plot(*state_traj[: t + 1].T, c, lw=lw)
+            if t > 0:
+                ax1.plot(*state_traj[0].T, c, ls="none", marker=".", markersize=6)
             if t < t_max:  # episode was shorter than other simulations
-                ax1.plot(*state_trajectory[: t + 1].T, c, marker="x", markersize=3)
+                ax1.plot(*state_traj[: t + 1].T, c, ls="none", marker="x", markersize=6)
+
             time = np.arange(t)
-            ax2.step(time, action_trajectory[:t, 0], c, lw=lw, where="post")
-            ax3.step(time, action_trajectory[:t, 1], c, lw=lw, where="post")
+            ax2.step(time, action_traj[:t, 0], c, lw=lw, where="post")
+            ax3.step(time, action_traj[:t, 1], c, lw=lw, where="post")
         ax4.plot(returns, c, lw=lw)
 
     ax1.set_xlabel("$x_1$")
