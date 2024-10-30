@@ -70,9 +70,12 @@ def plot_states_and_actions_and_return(
         for t, state_traj, action_traj in zip(timesteps, states, actions):
             ax1.plot(*state_traj[: t + 1].T, c, lw=lw)
             if t > 0:
-                ax1.plot(*state_traj[0].T, c, ls="none", marker=".", markersize=6)
+                ax1.plot(*state_traj[0].T, c, ls="none", marker=".", ms=6)
             if t < t_max:  # episode was shorter than other simulations
-                ax1.plot(*state_traj[: t + 1].T, c, ls="none", marker="x", markersize=6)
+                ax1.plot(*state_traj[: t + 1].T, c, ls="none", marker="x", ms=6)
+
+            violating = (np.abs(state_traj) > x_max + 1e-6).any(1)
+            ax1.plot(*state_traj[violating].T, "r", ls="none", marker="x", ms=6)
 
             time = np.arange(t)
             ax2.step(time, action_traj[:t, 0], c, lw=lw, where="post")
