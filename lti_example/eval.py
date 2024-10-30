@@ -64,7 +64,7 @@ def simulate_controller_once(
 if __name__ == "__main__":
     # parse script arguments
     parser = argparse.ArgumentParser(
-        description="Simulation of the constrained LTI environment.",
+        description="Evaluation of controllers on the constrained LTI environment.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     group = parser.add_argument_group("Choice of controller")
