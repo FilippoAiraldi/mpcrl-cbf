@@ -100,14 +100,19 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
     ) -> tuple[ObsType, dict[str, Any]]:
         super().reset(seed=seed, options=options)
         self._sampler.seed(self.np_random)
-        sample_on_contour = False if options is None else options.get("contour", False)
-        if sample_on_contour:
+        reset_from = options.get("ic", "interior")
+        if reset_from == "contour":
             x = self._sampler.sample_from_surface()
+        elif reset_from == "interior":
+            x = self._sampler.sample_from_interior()
+            # for _ in range(100):
+            #     x = self._sampler.sample_from_interior()
+            #     if np.linalg.norm(x) >= 2.5:
+            #         break
         else:
-            for _ in range(100):
-                x = x = self._sampler.sample_from_interior()
-                if np.linalg.norm(x) >= 2.5:
-                    break
+            points = self._sampler._qhull.points
+            x = self.np_random.uniform(points.min(0), points.max(0), size=self.ns)
+        assert self.observation_space.contains(x), f"invalid initial state {x}"
         self.x = x
         return x, {}
 

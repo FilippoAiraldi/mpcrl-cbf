@@ -3,7 +3,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
 from controllers import (
@@ -11,11 +10,9 @@ from controllers import (
     get_dlqr_controller,
     get_mpc_controller,
 )
-from csnlp.util.io import save
 from env import ConstrainedLtiEnv as Env
 from gymnasium.wrappers import TimeLimit
 from joblib import Parallel, delayed
-from plot import plot_states_and_actions_and_return
 
 
 def simulate_controller_once(
@@ -104,11 +101,12 @@ if __name__ == "__main__":
         help="Number of timesteps per each simulation.",
     )
     group.add_argument(
-        "--init-conditions",
-        choices=["contour", "interior"],
+        "--ic",
+        choices=["contour", "interior", "box"],
         default="contour",
-        help="Sets whether the initial state in the environment is on the contour or in"
-        " the interior of the safe set.",
+        help="Sets whether the initial conditions (i.e., initial state) of the "
+        "environment is drawn from the contour or interior of the max. invariant set, "
+        "or its bounding box.",
     )
     group = parser.add_argument_group("Storing and plotting options")
     group.add_argument(
@@ -147,13 +145,11 @@ if __name__ == "__main__":
         raise RuntimeError(f"Unknown controller: {controller_name}")
 
     # run the simulations (possibly in parallel asynchronously)
-    ic_on_contour = args.init_conditions == "contour"
-    seeds = np.random.SeedSequence(args.seed).generate_state(args.n_sim)
+    seeds = map(int, np.random.SeedSequence(args.seed).generate_state(args.n_sim))
+    ic = args.ic
+    ts = args.timesteps
     data = Parallel(n_jobs=args.n_jobs, verbose=10, return_as="generator_unordered")(
-        delayed(simulate_controller_once)(
-            controller, args.timesteps, int(seed), contour=ic_on_contour
-        )
-        for seed in seeds
+        delayed(simulate_controller_once)(controller, ts, s, ic=ic) for s in seeds
     )
     data_dict: dict[str, list[np.ndarray]] = {"cost": [], "actions": [], "states": []}
     for datum_cost, datum_actions, datum_states in data:
@@ -163,6 +159,8 @@ if __name__ == "__main__":
 
     # finally, store and plot the results. If no filepath is passed, always plot
     if args.save:
+        from csnlp.util.io import save
+
         path = Path("data")
         if not path.is_dir():
             path = "lti_example" / path
@@ -170,5 +168,8 @@ if __name__ == "__main__":
         fn = str(path / args.save)
         save(fn, **data_dict, args=args.__dict__, compression="lzma")
     if args.plot or not args.save:
+        import matplotlib.pyplot as plt
+        from plot import plot_states_and_actions_and_return
+
         plot_states_and_actions_and_return([data_dict])
         plt.show()
