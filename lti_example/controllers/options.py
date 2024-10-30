@@ -2,7 +2,7 @@
 
 OPTS = {
     "ipopt": {
-        "error_on_fail": True,
+        "error_on_fail": False,
         "expand": True,
         "print_time": False,
         "bound_consistency": True,
@@ -11,7 +11,7 @@ OPTS = {
         "ipopt": {"max_iter": 500, "print_level": 0, "sb": "yes"},
     },
     "fatrop": {
-        "error_on_fail": True,
+        "error_on_fail": False,
         "expand": True,
         "print_time": False,
         "bound_consistency": True,
