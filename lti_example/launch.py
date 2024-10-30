@@ -67,11 +67,33 @@ if __name__ == "__main__":
         description="Simulation of the constrained LTI environment.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    group = parser.add_argument_group("Controller options")
+    group = parser.add_argument_group("Choice of controller")
     group.add_argument(
         "controller",
         choices=["dlqr", "dclf-dcbf", "mpc"],
         help="The controller to use for the simulation.",
+    )
+    group = parser.add_argument_group("MPC options")
+    group.add_argument(
+        "--horizon",
+        type=int,
+        default=20,
+        help="The horizon of the MPC controller.",
+    )
+    group.add_argument(
+        "--soft",
+        action="store_true",
+        help="Whether to use soft constraints in the MPC controller.",
+    )
+    group.add_argument(
+        "--bound-initial-state",
+        action="store_true",
+        help="Whether to bound the initial state in the MPC controller.",
+    )
+    group.add_argument(
+        "--dlqr-terminal-cost",
+        action="store_true",
+        help="Whether to use the DLQR terminal cost in the MPC controller.",
     )
     group = parser.add_argument_group("Simulation options")
     group.add_argument("--n-sim", type=int, default=100, help="Number of simulations.")
@@ -115,7 +137,12 @@ if __name__ == "__main__":
     elif controller_name == "dclf-dcbf":
         controller = get_dclf_dcbf_controller()
     elif controller_name == "mpc":
-        controller = get_mpc_controller(20, True)
+        controller = get_mpc_controller(
+            horizon=args.horizon,
+            soft=args.soft,
+            bound_initial_state=args.bound_initial_state,
+            dlqr_terminal_cost=args.dlqr_terminal_cost,
+        )
     else:
         raise RuntimeError(f"Unknown controller: {controller_name}")
 

@@ -13,9 +13,12 @@ from tqdm import tqdm
 from lti_example.controllers.mpc import create_mpc
 
 # get the MPC controller
-N = 20  # approximately an horizon of 10 should be enough, but increase it a bit
-soft = False  # whether to impose hard or soft constraints on the states
-mpc = create_mpc(N, soft)
+mpc = create_mpc(
+    horizon=20,  # approximately 10 should be long enough, but increase it a bit
+    soft=False,
+    bound_initial_state=False,
+    dlqr_terminal_cost=False,
+)
 
 # compute the value function
 n_elm = 100
