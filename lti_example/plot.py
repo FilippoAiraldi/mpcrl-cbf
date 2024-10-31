@@ -81,7 +81,13 @@ def plot_states_and_actions_and_return(
             ax2.step(time, action_traj[:t, 0], c, lw=lw, where="post")
             ax3.step(time, action_traj[:t, 1], c, lw=lw, where="post")
 
-        ax4.violinplot(returns, [i], showmeans=True, showextrema=False)
+        VL = ax4.violinplot(returns, [i], showmedians=True, showextrema=False)
+        perpline = VL["cmedians"].get_paths()[0]
+        path = VL["bodies"][0].get_paths()[0].vertices
+        median = perpline.vertices[0, 1]
+        closest = np.abs(path[:, 1] - median).argmin()
+        width = np.abs(path[closest, 0]) - i
+        perpline.vertices[:, 0] = [i - width, i + width]
         pos = i + np.random.uniform(-0.01, 0.01, size=len(returns))
         ax4.scatter(pos, returns, s=10, facecolor="none", edgecolors=c)
 
