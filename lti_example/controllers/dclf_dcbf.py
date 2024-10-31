@@ -7,6 +7,7 @@ from controllers.options import OPTS
 from csnlp import Nlp
 from env import ConstrainedLtiEnv as Env
 from mpcrl.util.control import dcbf, dlqr
+from mpcrl.util.math import clip
 
 
 def create_dclf_dcbf_qcqp() -> Nlp[cs.MX]:
@@ -22,7 +23,7 @@ def create_dclf_dcbf_qcqp() -> Nlp[cs.MX]:
     env = Env()
     ns, na = Env.ns, Env.na
     x = nlp.parameter("x", (ns, 1))
-    u, _, _ = nlp.variable("u", (na, 1), lb=-Env.a_bound, ub=Env.a_bound)
+    u, _, _ = nlp.variable("u", (na, 1))
     delta, _, _ = nlp.variable("delta", lb=0)
     x_next = env.dynamics(x, u)
     alpha_dclf = 0.5
@@ -59,7 +60,7 @@ def get_dclf_dcbf_controller() -> (
     # create the QCQP and convert it to a function
     nlp = create_dclf_dcbf_qcqp()
     x0 = nlp.parameters["x"]
-    u_dclf_dcbf = nlp.variables["u"]
+    u_dclf_dcbf = clip(nlp.variables["u"], -Env.a_bound, Env.a_bound)
     primals = nlp.x
     func = nlp.to_function("dclf_dcbf_qcqp", (x0, primals), (u_dclf_dcbf, primals))
     last_sol = 0.0
