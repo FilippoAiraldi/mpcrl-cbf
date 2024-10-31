@@ -7,7 +7,6 @@ from controllers.options import OPTS
 from csnlp import Nlp
 from env import ConstrainedLtiEnv as Env
 from mpcrl.util.control import dcbf, dlqr
-from mpcrl.util.math import clip
 
 
 def create_dclf_dcbf_qcqp() -> Nlp[cs.MX]:
@@ -23,13 +22,12 @@ def create_dclf_dcbf_qcqp() -> Nlp[cs.MX]:
     env = Env()
     ns, na = Env.ns, Env.na
     x = nlp.parameter("x", (ns, 1))
-    u, _, _ = nlp.variable("u", (na, 1))
+    u, _, _ = nlp.variable("u", (na, 1), lb=-Env.a_bound, ub=Env.a_bound)
     delta, _, _ = nlp.variable("delta", lb=0)
     x_next = env.dynamics(x, u)
     alpha_dclf = 0.5
     alpha_dcbf = 0.5
-    penalty_u = 0.5
-    penalty_delta = 0.1
+    penalty_delta = 10.0
 
     _, P = dlqr(Env.A, Env.B, Env.Q, Env.R)
     lyapunov = lambda x_: cs.bilin(P, x_)
@@ -39,7 +37,7 @@ def create_dclf_dcbf_qcqp() -> Nlp[cs.MX]:
     h = env.safety_constraints
     dcbf_cnstr = dcbf(h, x, u, env.dynamics, [lambda y: alpha_dcbf * y])  # >= 0
     nlp.constraint("dcbf", dcbf_cnstr, ">=", 0)
-    nlp.minimize(penalty_u * cs.sumsqr(u) + penalty_delta * delta)
+    nlp.minimize(cs.bilin(Env.R, u) + penalty_delta * delta)
 
     # it is a QCQP problem due to the CLF constraint, so we have to solve it nonlinearly
     # as casadi does not support SOCP yet
@@ -60,7 +58,7 @@ def get_dclf_dcbf_controller() -> (
     # create the QCQP and convert it to a function
     nlp = create_dclf_dcbf_qcqp()
     x0 = nlp.parameters["x"]
-    u_dclf_dcbf = clip(nlp.variables["u"], -Env.a_bound, Env.a_bound)
+    u_dclf_dcbf = nlp.variables["u"]
     primals = nlp.x
     func = nlp.to_function("dclf_dcbf_qcqp", (x0, primals), (u_dclf_dcbf, primals))
     last_sol = 0.0
