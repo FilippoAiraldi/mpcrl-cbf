@@ -17,6 +17,20 @@ ActType: TypeAlias = npt.NDArray[np.floating]
 SymType = TypeVar("SymType", cs.SX, cs.MX)
 
 
+MAX_INV_SET_V = np.asarray(  # computed with MATLAB MPT3 toolbox
+    [
+        [2.5962, 2.3221],
+        [2.0312, 3.0000],
+        [3.0000, 1.3125],
+        [3.0000, -3.0000],
+        [-3.0000, 3.0000],
+        [-3.0000, -1.3125],
+        [-2.0313, -3.0000],
+        [-2.5962, -2.3221],
+    ]
+)
+
+
 class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
     """
     ## Description
@@ -52,31 +66,13 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
     suggested.
     """
 
-    ns = 2
-    na = 2
-    A = np.asarray([[1.0, 0.8], [-0.1, 1.0]])
+    A = np.asarray([[1.0, 0.4], [-0.1, 1.0]])
     B = np.asarray([[1.0, 0.05], [0.5, 1.0]])
+    ns, na = B.shape
     Q = np.eye(ns)
     R = 0.1 * np.eye(na)
     a_bound = 0.5
     x_soft_bound = 3.0
-    vertices = (
-        np.asarray(
-            [
-                [0.888157894736856, -3.0],
-                [2.222222222222287, 1.628472222222204],
-                [-2.222222222222204, -1.628472222222197],
-                [0.781893004115253, 2.456661522633749],
-                [-0.781893004115105, -2.456661522633779],
-                [-3.0, -0.656249999999953],
-                [-0.888157894736802, 3.0],
-                [-3.0, 3.0],
-                [3.0, 0.656250000000065],
-                [3.0, -3.0],
-            ]
-        )
-        * 0.999  # small margin to avoid numerical issues
-    )
     constraint_penalty = 1e3
 
     def __init__(self) -> None:
@@ -85,7 +81,7 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
         x_max = self.x_soft_bound
         self.observation_space = LooseBox(-np.inf, np.inf, (self.ns,), np.float64)
         self.action_space = LooseBox(-a_max, a_max, (self.na,), np.float64)
-        self._sampler = ConvexPolytopeUniformSampler(self.vertices)
+        self._sampler = ConvexPolytopeUniformSampler(MAX_INV_SET_V)
 
         # build also the symbolic dynamics and safety constraints
         x = cs.MX.sym("x", self.ns)
