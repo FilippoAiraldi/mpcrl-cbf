@@ -25,7 +25,7 @@ def get_dlqr_controller() -> (
     K, _ = dlqr(Env.A, Env.B, Env.Q, Env.R)
     a_min = Env.a_bound
 
-    def _f(x):
+    def _f(x, _):
         t0 = perf_counter()
         u = np.clip(-np.dot(K, x), -a_min, a_min)
         return u, perf_counter() - t0

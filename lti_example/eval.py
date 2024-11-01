@@ -52,7 +52,7 @@ def simulate_controller_once(
     sol_times = []
     terminated = truncated = False
     while not (terminated or truncated):
-        u, sol_time = controller(x)
+        u, sol_time = controller(x, env)
         x, r, terminated, truncated, _ = env.step(u)
         R += r
         U.append(u)
@@ -77,7 +77,7 @@ if __name__ == "__main__":
     group.add_argument(
         "--horizon",
         type=int,
-        default=20,
+        default=10,
         help="The horizon of the MPC controller.",
     )
     group.add_argument(

@@ -131,7 +131,7 @@ def get_mpc_controller(
     inner_solver = mpc.nlp.solver
     last_sol = 0.0
 
-    def _f(x):
+    def _f(x, _):
         nonlocal last_sol
         u_opt, last_sol = func(x, last_sol)
         return u_opt.toarray().reshape(-1), inner_solver.stats()["t_proc_total"]

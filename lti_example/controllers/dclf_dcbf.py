@@ -77,7 +77,7 @@ def get_dclf_dcbf_controller(
     func = nlp.to_function("dclf_dcbf_qcqp", (x0, primals), (u_dclf_dcbf, primals))
     last_sol = 0.0
 
-    def _f(x):
+    def _f(x, _):
         nonlocal last_sol
         u, last_sol = func(x, last_sol)
         return u.toarray().reshape(-1), func.stats()["t_proc_total"]
