@@ -5,6 +5,7 @@ OPTS = {
         "error_on_fail": False,
         "expand": True,
         "print_time": False,
+        "record_time": True,
         "bound_consistency": True,
         "calc_lam_p": False,
         "calc_lam_x": True,
@@ -13,6 +14,7 @@ OPTS = {
     "qpoases": {
         "error_on_fail": False,
         "expand": True,
+        "record_time": True,
         "print_time": False,
         "printLevel": "none",
     },

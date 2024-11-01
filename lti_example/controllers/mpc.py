@@ -84,7 +84,7 @@ def create_mpc(
 
 def get_mpc_controller(
     *args: Any, **kwargs: Any
-) -> Callable[[npt.NDArray[np.floating]], npt.NDArray[np.floating]]:
+) -> Callable[[npt.NDArray[np.floating]], tuple[npt.NDArray[np.floating], float]]:
     """Returns the MPC controller with the given horizon as a callable function.
 
     Parameters
@@ -94,8 +94,9 @@ def get_mpc_controller(
 
     Returns
     -------
-    callable from array-like to array-like
-        A controller that maps the current state to the desired action.
+    callable from array-like to (array-like, float)
+        A controller that maps the current state to the desired action, and returns also
+        the time it took to compute the action.
     """
     # create the MPC and convert it to a function (it's faster than going through csnlp)
     mpc = create_mpc(*args, **kwargs)
@@ -103,11 +104,12 @@ def get_mpc_controller(
     u_opt = mpc.actions["u"][:, 0]
     primals = mpc.nlp.x
     func = mpc.nlp.to_function("mpc", (x0, primals), (u_opt, primals))
+    inner_solver = mpc.nlp.solver
     last_sol = 0.0
 
     def _f(x):
         nonlocal last_sol
         u_opt, last_sol = func(x, last_sol)
-        return u_opt.toarray().reshape(-1)
+        return u_opt.toarray().reshape(-1), inner_solver.stats()["t_proc_total"]
 
     return _f

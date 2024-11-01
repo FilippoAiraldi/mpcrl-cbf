@@ -20,7 +20,9 @@ def simulate_controller_once(
     timesteps: int,
     seed: int,
     **reset_kwargs: Any,
-) -> tuple[float, list[npt.NDArray[np.floating]], list[npt.NDArray[np.floating]]]:
+) -> tuple[
+    float, list[npt.NDArray[np.floating]], list[npt.NDArray[np.floating]], list[float]
+]:
     """Simulates one episode of the constrained LTI environment using the given
     controller.
 
@@ -37,9 +39,9 @@ def simulate_controller_once(
 
     Returns
     -------
-    float, and tuple of two lists of arrays
-        Returns the total cost of the episode and a tuple of two lists containing
-        actions and states arrays, respectively.
+    float, tuple of two lists of arrays, and a list of floats
+        Returns the total cost of the episode, a tuple of two lists containing
+        actions and states arrays, respectively, and a list of solution times.
     """
     if reset_kwargs is None:
         reset_kwargs = {}
@@ -48,14 +50,16 @@ def simulate_controller_once(
     R = 0.0
     U = []
     X = [x]
+    sol_times = []
     terminated = truncated = False
     while not (terminated or truncated):
-        u = controller(x)
+        u, sol_time = controller(x)
         x, r, terminated, truncated, _ = env.step(u)
         R += r
         U.append(u)
         X.append(x)
-    return R, U, X
+        sol_times.append(sol_time)
+    return R, U, X, sol_times
 
 
 if __name__ == "__main__":
@@ -151,11 +155,12 @@ if __name__ == "__main__":
     data = Parallel(n_jobs=args.n_jobs, verbose=10, return_as="generator_unordered")(
         delayed(simulate_controller_once)(controller, ts, s, ic=ic) for s in seeds
     )
-    data_dict: dict[str, list[np.ndarray]] = {"cost": [], "actions": [], "states": []}
-    for datum_cost, datum_actions, datum_states in data:
+    data_dict = {"cost": [], "actions": [], "states": [], "sol_times": []}
+    for datum_cost, datum_actions, datum_states, datum_sol_times in data:
         data_dict["cost"].append(datum_cost)
         data_dict["actions"].append(np.asarray(datum_actions))
         data_dict["states"].append(np.asarray(datum_states))
+        data_dict["sol_times"].append(np.asarray(datum_sol_times))
 
     # finally, store and plot the results. If no filepath is passed, always plot
     if args.save:

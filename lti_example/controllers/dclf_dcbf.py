@@ -46,14 +46,15 @@ def create_dclf_dcbf_qcqp() -> Nlp[cs.MX]:
 
 
 def get_dclf_dcbf_controller() -> (
-    Callable[[npt.NDArray[np.floating]], npt.NDArray[np.floating]]
+    Callable[[npt.NDArray[np.floating]], tuple[npt.NDArray[np.floating], float]]
 ):
     """Returns the discrete-time LQR controller with action saturation.
 
     Returns
     -------
-    callable from array-like to array-like
-        A controller that maps the current state to the desired action.
+    callable from array-like to (array-like, float)
+        A controller that maps the current state to the desired action, and returns also
+        the time it took to compute the action.
     """
     # create the QCQP and convert it to a function
     nlp = create_dclf_dcbf_qcqp()
@@ -66,6 +67,6 @@ def get_dclf_dcbf_controller() -> (
     def _f(x):
         nonlocal last_sol
         u, last_sol = func(x, last_sol)
-        return u.toarray().reshape(-1)
+        return u.toarray().reshape(-1), func.stats()["t_proc_total"]
 
     return _f
