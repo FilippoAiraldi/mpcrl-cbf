@@ -48,7 +48,7 @@ def create_mpc(
         The single-shooting MPC controller.
     """
     if env is None:
-        env = ConstrainedLtiEnv()
+        env = ConstrainedLtiEnv(0)
     A = env.A
     B = env.B
     Q = env.Q

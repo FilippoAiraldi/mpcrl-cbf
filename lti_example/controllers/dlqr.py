@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from time import process_time
+from time import perf_counter
 
 import numpy as np
 import numpy.typing as npt
@@ -18,12 +18,16 @@ def get_dlqr_controller() -> (
         A controller that maps the current state to the desired action, and returns also
         the time it took to compute the action.
     """
+    # NOTE: accurately measuring timings when n_jobs > 1, process_time should be used
+    # instead of perf_counter. However, the controller is instantiated only in the main
+    # process, so process_time would return zero time elapsed.
+
     K, _ = dlqr(Env.A, Env.B, Env.Q, Env.R)
     a_min = Env.a_bound
 
     def _f(x):
-        t0 = process_time()
+        t0 = perf_counter()
         u = np.clip(-np.dot(K, x), -a_min, a_min)
-        return u, process_time() - t0
+        return u, perf_counter() - t0
 
     return _f

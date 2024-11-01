@@ -62,13 +62,12 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
 
     ## Episode End
 
-    The episode does not have an end, so wrapping it in, e.g., `TimeLimit`, is strongly
-    suggested.
+    The episode ends when `max_timesteps` time steps are reached.
     """
 
     A = np.asarray([[1.0, 0.4], [-0.1, 1.0]])
     B = np.asarray([[1.0, 0.05], [0.5, 1.0]])
-    D = np.asarray([[0.3, 0.0], [0.0, 0.1]])
+    D = np.asarray([[0.3], [0.1]])
     ns, na = B.shape
     nd = D.shape[1]
     Q = np.eye(ns)
@@ -77,14 +76,16 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
     x_soft_bound = 3.0
     constraint_penalty = 1e3
 
-    def __init__(self) -> None:
+    def __init__(self, max_timesteps: int) -> None:
         super().__init__()
         a_max = self.a_bound
         x_max = self.x_soft_bound
         self.observation_space = LooseBox(-np.inf, np.inf, (self.ns,), np.float64)
         self.action_space = LooseBox(-a_max, a_max, (self.na,), np.float64)
         self._sampler = ConvexPolytopeUniformSampler(MAX_INV_SET_V)
-
+        self._max_timesteps = T = max_timesteps
+        self._mean_disturbances = np.zeros(T)
+        self._cov_disturbances = np.eye(T) + np.ones((T, T)) * 0.1
         # build also the symbolic dynamics and safety constraints
         x = cs.MX.sym("x", self.ns)
         u = cs.MX.sym("u", self.na)
@@ -111,20 +112,24 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
             points = self._sampler._qhull.points
             x = self.np_random.uniform(points.min(0), points.max(0), size=self.ns)
         assert self.observation_space.contains(x), f"invalid initial state {x}"
-        self.x = x
+        self._x = x
+        self._dist_profile = self.sample_disturbance_profiles(1)
+        self._t = 0
         return x, {}
 
     def step(
         self, action: npt.ArrayLike
     ) -> tuple[ObsType, float, bool, bool, dict[str, Any]]:
-        x = self.x
         u = np.asarray(action).reshape(self.na)
         assert self.action_space.contains(u), f"invalid action {u}"
-        w = self.np_random.uniform(-1.0, 1.0, size=self.ns)
+        x = self._x
+        w = self._dist_profile[:, self._t]
         x_new = np.dot(self.A, x) + np.dot(self.B, u) + np.dot(self.D, w)
         assert self.observation_space.contains(x_new), f"invalid new state {x_new}"
-        self.x = x_new
-        return x_new, self._compute_cost(x, u), False, False, {}
+        self._x = x_new
+        self._t += 1
+        truncated = self._t >= self._max_timesteps
+        return x_new, self._compute_cost(x, u), False, truncated, {}
 
     def _compute_cost(self, x: ObsType, u: ActType) -> float:
         lb_violation = np.maximum(0, -self.x_soft_bound - x).sum()
@@ -133,4 +138,17 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
             np.dot(np.dot(self.Q, x), x)
             + np.dot(np.dot(self.R, u), u)
             + self.constraint_penalty * (lb_violation + ub_violation)
+        )
+
+    def sample_disturbance_profiles(self, n: int) -> npt.NDArray[np.floating]:
+        """Samples i.i.d. disturbance profiles from the disturbance profile's
+        distribution. Note that disturbances are correlated at different time steps.
+
+        Returns
+        -------
+        array
+            An array of shape `(n, max_timesteps)` containing the disturbance profiles.
+        """
+        return self.np_random.multivariate_normal(
+            self._mean_disturbances, self._cov_disturbances, size=n
         )

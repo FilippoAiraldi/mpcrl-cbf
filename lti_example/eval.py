@@ -10,8 +10,7 @@ from controllers import (
     get_dlqr_controller,
     get_mpc_controller,
 )
-from env import ConstrainedLtiEnv as Env
-from gymnasium.wrappers import TimeLimit
+from env import ConstrainedLtiEnv
 from joblib import Parallel, delayed
 
 
@@ -45,7 +44,7 @@ def simulate_controller_once(
     """
     if reset_kwargs is None:
         reset_kwargs = {}
-    env = TimeLimit(Env(), timesteps)
+    env = ConstrainedLtiEnv(timesteps)
     x, _ = env.reset(seed=seed, options=reset_kwargs)
     R = 0.0
     U = []
@@ -155,8 +154,7 @@ if __name__ == "__main__":
 
     # run the simulations (possibly in parallel asynchronously)
     seeds = map(int, np.random.SeedSequence(args.seed).generate_state(args.n_sim))
-    ic = args.ic
-    ts = args.timesteps
+    ic, ts = args.ic, args.timesteps
     data = Parallel(n_jobs=args.n_jobs, verbose=10, return_as="generator_unordered")(
         delayed(simulate_controller_once)(controller, ts, s, ic=ic) for s in seeds
     )

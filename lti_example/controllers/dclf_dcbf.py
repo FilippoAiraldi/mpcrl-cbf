@@ -1,35 +1,43 @@
 from collections.abc import Callable
+from typing import Any
 
 import casadi as cs
 import numpy as np
 import numpy.typing as npt
 from controllers.options import OPTS
 from csnlp import Nlp
-from env import ConstrainedLtiEnv as Env
+from env import ConstrainedLtiEnv
 from mpcrl.util.control import dcbf, dlqr
 
 
-def create_dclf_dcbf_qcqp() -> Nlp[cs.MX]:
+def create_dclf_dcbf_qcqp(env: ConstrainedLtiEnv | None = None) -> Nlp[cs.MX]:
     """Creates a DCLF-DCBF-QCQP controller for the `ConstrainedLtiEnv` env with the
     given horizon.
+
+    Parameters
+    ----------
+    env : ConstrainedLtiEnv, optional
+        The environment to build the controller for. If `None`, a new default
+        environment is instantiated.
 
     Returns
     -------
     Nlp
         The corresponding optimization problem.
     """
+    if env is None:
+        env = ConstrainedLtiEnv(0)
     nlp = Nlp("MX")
-    env = Env()
-    ns, na = Env.ns, Env.na
+    ns, na = env.ns, env.na
     x = nlp.parameter("x", (ns, 1))
-    u, _, _ = nlp.variable("u", (na, 1), lb=-Env.a_bound, ub=Env.a_bound)
+    u, _, _ = nlp.variable("u", (na, 1), lb=-env.a_bound, ub=env.a_bound)
     delta, _, _ = nlp.variable("delta", lb=0)
     x_next = env.dynamics(x, u)
     alpha_dclf = 0.5
     alpha_dcbf = 0.5
     penalty_delta = 10.0
 
-    _, P = dlqr(Env.A, Env.B, Env.Q, Env.R)
+    _, P = dlqr(env.A, env.B, env.Q, env.R)
     lyapunov = lambda x_: cs.bilin(P, x_)
     V = lyapunov(x)
     V_next = lyapunov(x_next)
@@ -37,7 +45,7 @@ def create_dclf_dcbf_qcqp() -> Nlp[cs.MX]:
     h = env.safety_constraints
     dcbf_cnstr = dcbf(h, x, u, env.dynamics, [lambda y: alpha_dcbf * y])  # >= 0
     nlp.constraint("dcbf", dcbf_cnstr, ">=", 0)
-    nlp.minimize(cs.bilin(Env.R, u) + penalty_delta * delta)
+    nlp.minimize(cs.bilin(env.R, u) + penalty_delta * delta)
 
     # it is a QCQP problem due to the CLF constraint, so we have to solve it nonlinearly
     # as casadi does not support SOCP yet
@@ -45,10 +53,15 @@ def create_dclf_dcbf_qcqp() -> Nlp[cs.MX]:
     return nlp
 
 
-def get_dclf_dcbf_controller() -> (
-    Callable[[npt.NDArray[np.floating]], tuple[npt.NDArray[np.floating], float]]
-):
+def get_dclf_dcbf_controller(
+    *args: Any, **kwargs: Any
+) -> Callable[[npt.NDArray[np.floating]], tuple[npt.NDArray[np.floating], float]]:
     """Returns the discrete-time LQR controller with action saturation.
+
+    Parameters
+    ----------
+    args, kwargs
+        The arguments to pass to the `create_dclf_dcbf_qcqp` method.
 
     Returns
     -------
@@ -57,7 +70,7 @@ def get_dclf_dcbf_controller() -> (
         the time it took to compute the action.
     """
     # create the QCQP and convert it to a function
-    nlp = create_dclf_dcbf_qcqp()
+    nlp = create_dclf_dcbf_qcqp(*args, **kwargs)
     x0 = nlp.parameters["x"]
     u_dclf_dcbf = nlp.variables["u"]
     primals = nlp.x
