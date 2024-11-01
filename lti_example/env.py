@@ -1,5 +1,3 @@
-import os
-import sys
 from typing import Any, TypeAlias, TypeVar
 
 import casadi as cs
@@ -7,8 +5,6 @@ import gymnasium as gym
 import numpy as np
 import numpy.typing as npt
 from mpcrl.util.geometry import ConvexPolytopeUniformSampler
-
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from util.loose_box import LooseBox
 

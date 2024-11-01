@@ -1,6 +1,3 @@
-import contextlib
-import os
-import sys
 from collections.abc import Callable
 from typing import Any
 
@@ -13,16 +10,7 @@ from csnlp.wrappers import Mpc
 from env import ConstrainedLtiEnv as Env
 from mpcrl.util.control import dlqr
 
-
-@contextlib.contextmanager
-def nostdout():
-    save_stdout = sys.stdout
-    try:
-        with open(os.devnull, "w") as f:
-            sys.stdout = f
-            yield
-    finally:
-        sys.stdout = save_stdout
+from util.output_supress import nostdout
 
 
 def create_mpc(
@@ -32,6 +20,8 @@ def create_mpc(
     bound_initial_state: bool,
     dlqr_terminal_cost: bool,
     env: Env | None = None,
+    *_: Any,
+    **__: Any,
 ) -> Mpc[cs.MX]:
     """Creates a linear MPC controller for the `ConstrainedLtiEnv` env.
 

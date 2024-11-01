@@ -1,17 +1,22 @@
 import argparse
+import os
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
 import numpy.typing as npt
+from joblib import Parallel, delayed
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
 from controllers import (
     get_dclf_dcbf_controller,
     get_dlqr_controller,
     get_mpc_controller,
 )
 from env import ConstrainedLtiEnv as Env
-from joblib import Parallel, delayed
 
 
 def get_controller(
