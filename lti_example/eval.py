@@ -82,6 +82,11 @@ if __name__ == "__main__":
         help="The horizon of the MPC controller.",
     )
     group.add_argument(
+        "--dcbf",
+        action="store_true",
+        help="Whether to use discrete-time CBF constraints in the MPC controller.",
+    )
+    group.add_argument(
         "--soft",
         action="store_true",
         help="Whether to use soft constraints in the MPC controller.",
