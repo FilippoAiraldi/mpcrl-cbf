@@ -15,7 +15,7 @@ plt.style.use("seaborn-v0_8-pastel")
 
 def load_single_file(
     filename: str,
-) -> tuple[dict[str, Any], dict[str, list[npt.NDArray[np.floating]]]]:
+) -> tuple[dict[str, Any], dict[str, npt.NDArray[np.floating]]]:
     """Loads the data from a single file on disk.
 
     Parameters
@@ -35,16 +35,16 @@ def load_single_file(
 
 
 def plot_states_and_actions_and_return(
-    data: Collection[dict[str, list[npt.NDArray[np.floating]]]],
+    data: Collection[dict[str, npt.NDArray[np.floating]]],
     names: Collection[str] | None = None,
 ) -> None:
     """Plots the state trajectories, actions, and returns of the simulations.
 
     Parameters
     ----------
-    data : collection of dictionaries (str, list of arrays)
-        The dictionaries from different simulations, each containing the keys "cost",
-        "actions", and "states".
+    data : collection of dictionaries (str, arrays)
+        The dictionaries from different simulations, each containing the keys `"cost"`,
+        `"actions"`, `"states"`, and `"sol_times"`.
     names : collection of str, optional
         The names of the simulations to use in the plot.
     """
@@ -60,26 +60,28 @@ def plot_states_and_actions_and_return(
     ax1.add_patch(Rectangle((-x_max, -x_max), 2 * x_max, 2 * x_max, fill=False))
 
     for i, datum in enumerate(data):
-        returns = datum["cost"]  # n_sim
-        actions = datum["actions"]  # n_sim x [timesteps x na]
-        states = datum["states"]  # n_sim x [timesteps + 1 x ns]
-        timesteps = [a.shape[0] for a in actions]  # n_sim
-        t_max = max(timesteps)
+        returns = datum["cost"]  # n_ctrl x n_eval
+        actions = datum["actions"]  # n_ctrl x n_eval x timesteps x na
+        states = datum["states"]  # n_ctrl x n_eval x timesteps + 1 x ns
         c = f"C{i}"
+        timesteps = actions.shape[2]
+        time = np.arange(timesteps)
 
-        for t, state_traj, action_traj in zip(timesteps, states, actions):
-            ax1.plot(*state_traj[: t + 1].T, c, lw=lw)
-            if t > 0:
-                ax1.plot(*state_traj[0].T, c, ls="none", marker=".", ms=6)
-            if t < t_max:  # episode was shorter than other simulations
-                ax1.plot(*state_traj[: t + 1].T, c, ls="none", marker="x", ms=6)
+        # flatten the first two axes as we do not distinguish between different
+        returns = returns.reshape(-1)
+        actions = actions.reshape(-1, timesteps, Env.na)
+        states = states.reshape(-1, timesteps + 1, Env.ns)
 
+        for state_traj, action_traj in zip(states, actions):
+            ax1.plot(*state_traj.T, c, lw=lw)
             violating = (np.abs(state_traj) > x_max + 1e-3).any(1)
             ax1.plot(*state_traj[violating].T, "r", ls="none", marker="x", ms=6)
+            ax2.step(time, action_traj[:, 0], c, lw=lw, where="post")
+            ax3.step(time, action_traj[:, 1], c, lw=lw, where="post")
 
-            time = np.arange(t)
-            ax2.step(time, action_traj[:t, 0], c, lw=lw, where="post")
-            ax3.step(time, action_traj[:t, 1], c, lw=lw, where="post")
+        print(f"cost: {np.mean(returns)} ± {np.std(returns)} | {np.median(returns)}")
+        st = datum["sol_times"]
+        print(f"sol. time: {np.mean(st):e} ± {np.std(st):e} | {np.median(st):e}")
 
         VL = ax4.violinplot(returns, [i], showmedians=True, showextrema=False)
         perpline = VL["cmedians"].get_paths()[0]

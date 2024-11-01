@@ -61,6 +61,7 @@ def get_controller(
 def simulate_controller_once(
     controller_name: Literal["dlqr", "dclf-dcbf", "mpc", "scmpc"],
     controller_kwargs: dict[str, Any],
+    n_eval: int,
     timesteps: int,
     reset_kwargs: dict[str, Any],
     seed: int,
@@ -76,8 +77,10 @@ def simulate_controller_once(
         The name of the controller to simulate.
     controller_kwargs : dict of str to any
         The arguments to pass to the controller instantiation.
+    n_eval : int
+        The number of evaluations to perform for this controller.
     timesteps : int
-        The number of timesteps to simulate.
+        The number of timesteps to run each evaluation for.
     reset_kwargs : dict of str to any
         Optional arguments to pass to the environment's reset method.
     seed : int
@@ -89,21 +92,25 @@ def simulate_controller_once(
         Returns the total cost of the episode, a tuple of two lists containing
         actions and states arrays, respectively, and a list of solution times.
     """
+    # create env and controller only once
     env = Env(timesteps)
     controller = get_controller(controller_name, **controller_kwargs)
-    x, _ = env.reset(seed=seed, options=reset_kwargs)
-    R = 0.0
-    U = []
-    X = [x]
-    sol_times = []
-    terminated = truncated = False
-    while not (terminated or truncated):
-        u, sol_time = controller(x, env)
-        x, r, terminated, truncated, _ = env.step(u)
-        R += r
-        U.append(u)
-        X.append(x)
-        sol_times.append(sol_time)
+
+    # simulate the controller on the environment for n_eval evaluations
+    R = np.zeros(n_eval)
+    U = np.empty((n_eval, timesteps, env.na))
+    X = np.empty((n_eval, timesteps + 1, env.ns))
+    sol_times = np.empty((n_eval, timesteps))
+    for e, s in enumerate(np.random.SeedSequence(seed).generate_state(n_eval)):
+        x, _ = env.reset(seed=int(s), options=reset_kwargs)
+        X[e, 0] = x
+        for t in range(timesteps):
+            u, sol_time = controller(x, env)
+            x, r, _, _, _ = env.step(u)
+            R[e] += r
+            U[e, t] = u
+            X[e, t + 1] = x
+            sol_times[e, t] = sol_time
     return R, U, X, sol_times
 
 
@@ -156,7 +163,12 @@ if __name__ == "__main__":
         help="The number of scenarios to use in the SCMPC controller.",
     )
     group = parser.add_argument_group("Simulation options")
-    group.add_argument("--n-sim", type=int, default=100, help="Number of simulations.")
+    group.add_argument(
+        "--n-ctrl", type=int, default=10, help="Number of controllers to simulate."
+    )
+    group.add_argument(
+        "--n-eval", type=int, default=10, help="Number of evaluations per controller."
+    )
     group.add_argument(
         "--timesteps",
         type=int,
@@ -201,23 +213,20 @@ if __name__ == "__main__":
         "dlqr_terminal_cost": args.dlqr_terminal_cost,
         "scenarios": args.scenarios,
     }
+    n_eval = args.n_eval
     ts = args.timesteps
     reset_kwargs = {"ic": args.ic}
-    seeds = map(int, np.random.SeedSequence(args.seed).generate_state(args.n_sim))
+    seeds = map(int, np.random.SeedSequence(args.seed).generate_state(args.n_ctrl))
 
     # run the simulations (possibly in parallel asynchronously)
     data = Parallel(n_jobs=args.n_jobs, verbose=10, return_as="generator_unordered")(
         delayed(simulate_controller_once)(
-            controller, controller_kwargs, ts, reset_kwargs, seed
+            controller, controller_kwargs, n_eval, ts, reset_kwargs, seed
         )
         for seed in seeds
     )
-    data_dict = {"cost": [], "actions": [], "states": [], "sol_times": []}
-    for datum_cost, datum_actions, datum_states, datum_sol_times in data:
-        data_dict["cost"].append(datum_cost)
-        data_dict["actions"].append(np.asarray(datum_actions))
-        data_dict["states"].append(np.asarray(datum_states))
-        data_dict["sol_times"].append(np.asarray(datum_sol_times))
+    keys = ("cost", "actions", "states", "sol_times")
+    data_dict = dict(zip(keys, map(np.asarray, zip(*data))))
 
     # finally, store and plot the results. If no filepath is passed, always plot
     if args.save:
@@ -228,7 +237,7 @@ if __name__ == "__main__":
             path = "lti_example" / path
         path.mkdir(parents=True, exist_ok=True)
         fn = str(path / args.save)
-        save(fn, **data_dict, args=args.__dict__, compression="lzma")
+        save(fn, **data_dict, args=args.__dict__, compression="mat")
     if args.plot or not args.save:
         import matplotlib.pyplot as plt
         from plot import plot_states_and_actions_and_return
