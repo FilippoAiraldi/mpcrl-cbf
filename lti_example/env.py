@@ -68,7 +68,9 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
 
     A = np.asarray([[1.0, 0.4], [-0.1, 1.0]])
     B = np.asarray([[1.0, 0.05], [0.5, 1.0]])
+    D = np.asarray([[0.3, 0.0], [0.0, 0.1]])
     ns, na = B.shape
+    nd = D.shape[1]
     Q = np.eye(ns)
     R = 0.1 * np.eye(na)
     a_bound = 0.5
@@ -118,7 +120,8 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
         x = self.x
         u = np.asarray(action).reshape(self.na)
         assert self.action_space.contains(u), f"invalid action {u}"
-        x_new = np.dot(self.A, x) + np.dot(self.B, u)
+        w = self.np_random.uniform(-1.0, 1.0, size=self.ns)
+        x_new = np.dot(self.A, x) + np.dot(self.B, u) + np.dot(self.D, w)
         assert self.observation_space.contains(x_new), f"invalid new state {x_new}"
         self.x = x_new
         return x_new, self._compute_cost(x, u), False, False, {}
