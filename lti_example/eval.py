@@ -15,18 +15,21 @@ from controllers import (
     get_dclf_dcbf_controller,
     get_dlqr_controller,
     get_mpc_controller,
+    get_scmpc_controller,
 )
 from env import ConstrainedLtiEnv as Env
 
 
 def get_controller(
-    controller_name: Literal["dlqr", "dclf-dcbf", "mpc"], *args: Any, **kwargs: Any
+    controller_name: Literal["dlqr", "dclf-dcbf", "mpc", "scmpc"],
+    *args: Any,
+    **kwargs: Any,
 ) -> Callable[[npt.NDArray[np.floating], Env], tuple[npt.NDArray[np.floating], float]]:
     """Returns the controller function given its name.
 
     Parameters
     ----------
-    controller_name : {"dlqr", "dclf-dcbf", "mpc"}
+    controller_name : {"dlqr", "dclf-dcbf", "mpc", "scmpc"}
         The name of the controller to return.
     args, kwargs
         The arguments to pass to the controller function.
@@ -48,13 +51,15 @@ def get_controller(
         func = get_dclf_dcbf_controller
     elif controller_name == "mpc":
         func = get_mpc_controller
+    elif controller_name == "scmpc":
+        func = get_scmpc_controller
     else:
         raise ValueError(f"Unknown controller: {controller_name}")
     return func(*args, **kwargs)
 
 
 def simulate_controller_once(
-    controller_name: Literal["dlqr", "dclf-dcbf", "mpc"],
+    controller_name: Literal["dlqr", "dclf-dcbf", "mpc", "scmpc"],
     controller_kwargs: dict[str, Any],
     timesteps: int,
     reset_kwargs: dict[str, Any],
@@ -67,7 +72,7 @@ def simulate_controller_once(
 
     Parameters
     ----------
-    controller_name : {"dlqr", "dclf-dcbf", "mpc"}
+    controller_name : {"dlqr", "dclf-dcbf", "mpc", "scmpc"}
         The name of the controller to simulate.
     controller_kwargs : dict of str to any
         The arguments to pass to the controller instantiation.
@@ -111,7 +116,7 @@ if __name__ == "__main__":
     group = parser.add_argument_group("Choice of controller")
     group.add_argument(
         "controller",
-        choices=["dlqr", "dclf-dcbf", "mpc"],
+        choices=["dlqr", "dclf-dcbf", "mpc", "scmpc"],
         help="The controller to use for the simulation.",
     )
     group = parser.add_argument_group("MPC options")
@@ -140,6 +145,15 @@ if __name__ == "__main__":
         "--dlqr-terminal-cost",
         action="store_true",
         help="Whether to use the DLQR terminal cost in the MPC controller.",
+    )
+    group = parser.add_argument_group(
+        "Scenario MPC (SCMPC) options (on top of MPC options)"
+    )
+    group.add_argument(
+        "--scenarios",
+        type=int,
+        default=32,
+        help="The number of scenarios to use in the SCMPC controller.",
     )
     group = parser.add_argument_group("Simulation options")
     group.add_argument("--n-sim", type=int, default=100, help="Number of simulations.")
@@ -185,6 +199,7 @@ if __name__ == "__main__":
         "soft": args.soft,
         "bound_initial_state": args.bound_initial_state,
         "dlqr_terminal_cost": args.dlqr_terminal_cost,
+        "scenarios": args.scenarios,
     }
     ts = args.timesteps
     reset_kwargs = {"ic": args.ic}
