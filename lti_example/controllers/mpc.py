@@ -1,3 +1,6 @@
+import contextlib
+import os
+import sys
 from collections.abc import Callable
 from typing import Any
 
@@ -7,8 +10,19 @@ import numpy.typing as npt
 from controllers.options import OPTS
 from csnlp import Nlp
 from csnlp.wrappers import Mpc
-from env import ConstrainedLtiEnv
+from env import ConstrainedLtiEnv as Env
 from mpcrl.util.control import dlqr
+
+
+@contextlib.contextmanager
+def nostdout():
+    save_stdout = sys.stdout
+    try:
+        with open(os.devnull, "w") as f:
+            sys.stdout = f
+            yield
+    finally:
+        sys.stdout = save_stdout
 
 
 def create_mpc(
@@ -17,7 +31,7 @@ def create_mpc(
     soft: bool,
     bound_initial_state: bool,
     dlqr_terminal_cost: bool,
-    env: ConstrainedLtiEnv | None = None,
+    env: Env | None = None,
 ) -> Mpc[cs.MX]:
     """Creates a linear MPC controller for the `ConstrainedLtiEnv` env.
 
@@ -48,7 +62,7 @@ def create_mpc(
         The single-shooting MPC controller.
     """
     if env is None:
-        env = ConstrainedLtiEnv(0)
+        env = Env(0)
     A = env.A
     B = env.B
     Q = env.Q
@@ -102,13 +116,14 @@ def create_mpc(
     if soft:
         J += env.constraint_penalty * cs.sum1(cs.sum2(slack))
     mpc.minimize(J)
-    mpc.init_solver(OPTS["qpoases"], "qpoases")
+    with nostdout():
+        mpc.init_solver(OPTS["qpoases"], "qpoases")
     return mpc
 
 
 def get_mpc_controller(
     *args: Any, **kwargs: Any
-) -> Callable[[npt.NDArray[np.floating]], tuple[npt.NDArray[np.floating], float]]:
+) -> Callable[[npt.NDArray[np.floating], Env], tuple[npt.NDArray[np.floating], float]]:
     """Returns the MPC controller as a callable function.
 
     Parameters
@@ -118,7 +133,7 @@ def get_mpc_controller(
 
     Returns
     -------
-    callable from array-like to (array-like, float)
+    callable from (array-like, ConstrainedLtiEnv) to (array-like, float)
         A controller that maps the current state to the desired action, and returns also
         the time it took to compute the action.
     """
@@ -133,7 +148,8 @@ def get_mpc_controller(
 
     def _f(x, _):
         nonlocal last_sol
-        u_opt, last_sol = func(x, last_sol)
+        with nostdout():
+            u_opt, last_sol = func(x, last_sol)
         return u_opt.toarray().reshape(-1), inner_solver.stats()["t_proc_total"]
 
     return _f

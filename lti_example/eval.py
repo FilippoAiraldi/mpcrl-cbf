@@ -1,7 +1,7 @@
 import argparse
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -10,15 +10,50 @@ from controllers import (
     get_dlqr_controller,
     get_mpc_controller,
 )
-from env import ConstrainedLtiEnv
+from env import ConstrainedLtiEnv as Env
 from joblib import Parallel, delayed
 
 
+def get_controller(
+    controller_name: Literal["dlqr", "dclf-dcbf", "mpc"], *args: Any, **kwargs: Any
+) -> Callable[[npt.NDArray[np.floating], Env], tuple[npt.NDArray[np.floating], float]]:
+    """Returns the controller function given its name.
+
+    Parameters
+    ----------
+    controller_name : {"dlqr", "dclf-dcbf", "mpc"}
+        The name of the controller to return.
+    args, kwargs
+        The arguments to pass to the controller function.
+
+    Returns
+    -------
+    callable from (array-like, ConstrainedLtiEnv) to (array-like, float)
+        A controller that maps the current state to the desired action, and returns also
+        the time it took to compute the action.
+
+    Raises
+    ------
+    ValueError
+        Raises an error if the controller name is not recognized.
+    """
+    if controller_name == "dlqr":
+        func = get_dlqr_controller
+    elif controller_name == "dclf-dcbf":
+        func = get_dclf_dcbf_controller
+    elif controller_name == "mpc":
+        func = get_mpc_controller
+    else:
+        raise ValueError(f"Unknown controller: {controller_name}")
+    return func(*args, **kwargs)
+
+
 def simulate_controller_once(
-    controller: Callable[[npt.NDArray[np.floating]], npt.NDArray[np.floating]],
+    controller_name: Literal["dlqr", "dclf-dcbf", "mpc"],
+    controller_kwargs: dict[str, Any],
     timesteps: int,
+    reset_kwargs: dict[str, Any],
     seed: int,
-    **reset_kwargs: Any,
 ) -> tuple[
     float, list[npt.NDArray[np.floating]], list[npt.NDArray[np.floating]], list[float]
 ]:
@@ -27,14 +62,16 @@ def simulate_controller_once(
 
     Parameters
     ----------
-    controller : callable from array-like to array-like
-        A controller that maps the current state to the desired action.
+    controller_name : {"dlqr", "dclf-dcbf", "mpc"}
+        The name of the controller to simulate.
+    controller_kwargs : dict of str to any
+        The arguments to pass to the controller instantiation.
     timesteps : int
         The number of timesteps to simulate.
+    reset_kwargs : dict of str to any
+        Optional arguments to pass to the environment's reset method.
     seed : int
         The seed for the random number generator.
-    reset_kwargs : any
-        Optional arguments to pass to the environment's reset method.
 
     Returns
     -------
@@ -42,9 +79,8 @@ def simulate_controller_once(
         Returns the total cost of the episode, a tuple of two lists containing
         actions and states arrays, respectively, and a list of solution times.
     """
-    if reset_kwargs is None:
-        reset_kwargs = {}
-    env = ConstrainedLtiEnv(timesteps)
+    env = Env(timesteps)
+    controller = get_controller(controller_name, **controller_kwargs)
     x, _ = env.reset(seed=seed, options=reset_kwargs)
     R = 0.0
     U = []
@@ -136,27 +172,25 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    # get the controller
-    controller_name = args.controller
-    if controller_name == "dlqr":
-        controller = get_dlqr_controller()
-    elif controller_name == "dclf-dcbf":
-        controller = get_dclf_dcbf_controller()
-    elif controller_name == "mpc":
-        controller = get_mpc_controller(
-            horizon=args.horizon,
-            soft=args.soft,
-            bound_initial_state=args.bound_initial_state,
-            dlqr_terminal_cost=args.dlqr_terminal_cost,
-        )
-    else:
-        raise RuntimeError(f"Unknown controller: {controller_name}")
+    # prepare arguments to the simulation
+    controller = args.controller
+    controller_kwargs = {
+        "horizon": args.horizon,
+        "dcbf": args.dcbf,
+        "soft": args.soft,
+        "bound_initial_state": args.bound_initial_state,
+        "dlqr_terminal_cost": args.dlqr_terminal_cost,
+    }
+    ts = args.timesteps
+    reset_kwargs = {"ic": args.ic}
+    seeds = map(int, np.random.SeedSequence(args.seed).generate_state(args.n_sim))
 
     # run the simulations (possibly in parallel asynchronously)
-    seeds = map(int, np.random.SeedSequence(args.seed).generate_state(args.n_sim))
-    ic, ts = args.ic, args.timesteps
     data = Parallel(n_jobs=args.n_jobs, verbose=10, return_as="generator_unordered")(
-        delayed(simulate_controller_once)(controller, ts, s, ic=ic) for s in seeds
+        delayed(simulate_controller_once)(
+            controller, controller_kwargs, ts, reset_kwargs, seed
+        )
+        for seed in seeds
     )
     data_dict = {"cost": [], "actions": [], "states": [], "sol_times": []}
     for datum_cost, datum_actions, datum_states, datum_sol_times in data:

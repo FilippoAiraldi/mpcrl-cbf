@@ -6,11 +6,11 @@ import numpy as np
 import numpy.typing as npt
 from controllers.options import OPTS
 from csnlp import Nlp
-from env import ConstrainedLtiEnv
+from env import ConstrainedLtiEnv as Env
 from mpcrl.util.control import dcbf, dlqr
 
 
-def create_dclf_dcbf_qcqp(env: ConstrainedLtiEnv | None = None) -> Nlp[cs.MX]:
+def create_dclf_dcbf_qcqp(env: Env | None = None, *_: Any, **__: Any) -> Nlp[cs.MX]:
     """Creates a DCLF-DCBF-QCQP controller for the `ConstrainedLtiEnv` env with the
     given horizon.
 
@@ -26,7 +26,7 @@ def create_dclf_dcbf_qcqp(env: ConstrainedLtiEnv | None = None) -> Nlp[cs.MX]:
         The corresponding optimization problem.
     """
     if env is None:
-        env = ConstrainedLtiEnv(0)
+        env = Env(0)
     nlp = Nlp("MX")
     ns, na = env.ns, env.na
     x = nlp.parameter("x", (ns, 1))
@@ -55,7 +55,7 @@ def create_dclf_dcbf_qcqp(env: ConstrainedLtiEnv | None = None) -> Nlp[cs.MX]:
 
 def get_dclf_dcbf_controller(
     *args: Any, **kwargs: Any
-) -> Callable[[npt.NDArray[np.floating]], tuple[npt.NDArray[np.floating], float]]:
+) -> Callable[[npt.NDArray[np.floating], Env], tuple[npt.NDArray[np.floating], float]]:
     """Returns the discrete-time LQR controller with action saturation.
 
     Parameters
@@ -65,7 +65,7 @@ def get_dclf_dcbf_controller(
 
     Returns
     -------
-    callable from array-like to (array-like, float)
+    callable from (array-like, ConstrainedLtiEnv) to (array-like, float)
         A controller that maps the current state to the desired action, and returns also
         the time it took to compute the action.
     """
