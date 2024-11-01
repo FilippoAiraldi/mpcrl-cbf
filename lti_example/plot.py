@@ -74,16 +74,12 @@ def plot_states_and_actions_and_return(
             if t < t_max:  # episode was shorter than other simulations
                 ax1.plot(*state_traj[: t + 1].T, c, ls="none", marker="x", ms=6)
 
-            violating = (np.abs(state_traj) > x_max + 1e-6).any(1)
+            violating = (np.abs(state_traj) > x_max + 1e-3).any(1)
             ax1.plot(*state_traj[violating].T, "r", ls="none", marker="x", ms=6)
 
             time = np.arange(t)
             ax2.step(time, action_traj[:t, 0], c, lw=lw, where="post")
             ax3.step(time, action_traj[:t, 1], c, lw=lw, where="post")
-
-        print(f"cost: {np.mean(returns)} ± {np.std(returns)}")
-        sol_times = datum["sol_times"]
-        print(f"sol. time: {np.mean(sol_times):e} ± {np.std(sol_times):e}")
 
         VL = ax4.violinplot(returns, [i], showmedians=True, showextrema=False)
         perpline = VL["cmedians"].get_paths()[0]

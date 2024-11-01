@@ -17,7 +17,7 @@ ActType: TypeAlias = npt.NDArray[np.floating]
 SymType = TypeVar("SymType", cs.SX, cs.MX)
 
 
-MAX_INV_SET_V = np.asarray(  # computed with MATLAB MPT3 toolbox
+MAX_INV_SET_V = 0.99 * np.asarray(  # computed with MATLAB MPT3 toolbox
     [
         [2.5962, 2.3221],
         [2.0312, 3.0000],
@@ -87,7 +87,7 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
         x = cs.MX.sym("x", self.ns)
         u = cs.MX.sym("u", self.na)
         x_next = self.A @ x + self.B @ u
-        h = cs.veccat(x + x_max, x_max - x)
+        h = cs.veccat(x + x_max, x_max - x)  # >= 0
         self.dynamics = cs.Function("f", [x, u], [x_next], ["x", "u"], ["x_next"])
         self.safety_constraints = cs.Function("h", [x], [h], ["x"], ["h"])
 
