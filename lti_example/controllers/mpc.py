@@ -19,8 +19,7 @@ def create_mpc(
     dlqr_terminal_cost: bool,
     env: ConstrainedLtiEnv | None = None,
 ) -> Mpc[cs.MX]:
-    """Creates a linear MPC controller for the `ConstrainedLtiEnv` env with the given
-    horizon.
+    """Creates a linear MPC controller for the `ConstrainedLtiEnv` env.
 
     Parameters
     ----------
@@ -59,8 +58,7 @@ def create_mpc(
     x_bnd = env.x_soft_bound
 
     # create actions and get states when rolling the dynamics along the horizon
-    nlp = Nlp("MX")
-    mpc = Mpc(nlp, prediction_horizon=horizon, shooting="single")
+    mpc = Mpc(Nlp("MX"), horizon, shooting="single")
     mpc.state("x", ns)
     u, _ = mpc.action("u", na, lb=-a_bnd, ub=a_bnd)
     mpc.set_linear_dynamics(A, B)
@@ -103,15 +101,15 @@ def create_mpc(
     # add penalty cost (if needed) and set the solver
     if soft:
         J += env.constraint_penalty * cs.sum1(cs.sum2(slack))
-    nlp.minimize(J)
-    nlp.init_solver(OPTS["qpoases"], "qpoases")
+    mpc.minimize(J)
+    mpc.init_solver(OPTS["qpoases"], "qpoases")
     return mpc
 
 
 def get_mpc_controller(
     *args: Any, **kwargs: Any
 ) -> Callable[[npt.NDArray[np.floating]], tuple[npt.NDArray[np.floating], float]]:
-    """Returns the MPC controller with the given horizon as a callable function.
+    """Returns the MPC controller as a callable function.
 
     Parameters
     ----------
