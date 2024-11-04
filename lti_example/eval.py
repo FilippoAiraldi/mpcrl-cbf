@@ -177,7 +177,7 @@ if __name__ == "__main__":
     )
     group.add_argument(
         "--ic",
-        choices=["contour", "interior", "box"],
+        choices=("contour", "interior", "box"),
         default="contour",
         help="Sets whether the initial conditions (i.e., initial state) of the "
         "environment is drawn from the contour or interior of the max. invariant set, "
