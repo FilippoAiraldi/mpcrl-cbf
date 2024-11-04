@@ -1,14 +1,14 @@
-%% Solve the explicit MPC problem
-clearvars, clc, close all
+%% Define the control problem
+clearvars, close all
 
 % define LTI system
-A = [1, 0.8; -0.1, 1];
-B = [1, 0.05; 0.5, 1];
+A = [1.0, 0.4; -0.1, 1.0];
+B = [1.0, 0.05; 0.5, 1.0];
 model = LTISystem('A', A, 'B', B);
 
 % add penalties
 Q = eye(model.nx);
-R = 0.1 .* eye(model.nu);
+R = 0.1 * eye(model.nu);
 model.x.penalty = QuadFunction(Q);
 model.u.penalty = QuadFunction(R);
 
@@ -20,19 +20,25 @@ x_bnd = 3;
 model.x.min = [-x_bnd; -x_bnd];
 model.x.max = [x_bnd; x_bnd];
 
+
+%% Get the vertices of the (bounded) feasible set
+% vertices = explicit_mpc.partition.convexHull.V;
+% disp(vertices)
+% or better, compute the maximal invariant set
+inv_set = model.invariantSet();
+inv_set.plot();
+disp(inv_set.V)
+
+
+%% Solve the explicit MPC problem
 % create MPC problem
-N = 20;
+N = 4;
 explicit_mpc = MPCController(model, N).toExplicit();
 % explicit_mpc.partition.plot()
 % explicit_mpc.cost.fplot()
 % xlim([-x_bnd, x_bnd])
 % ylim([-x_bnd, x_bnd])
 % zlim([-5, 80])
-
-
-%% Get the vertices of the (bounded) feasible set
-vertices = explicit_mpc.partition.convexHull.V;
-disp(vertices)
 
 
 %% Extract the optimal value function and policy over the state space
