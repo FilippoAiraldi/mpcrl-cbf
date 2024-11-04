@@ -80,11 +80,13 @@ def create_scmpc(
         dcbf = h[:, 1:] - decay * h[:, 0]  # unrolled CBF constraints
         dcbf_lbx, dcbf_ubx = cs.vertsplit_n(dcbf, 2)
         if soft:
-            _, _, slack = scmpc.constraint("lbx", dcbf_lbx, ">=", 0.0, soft=True)
-            scmpc.constraint("ubx", dcbf_ubx + slack, ">=", 0.0)
+            _, _, slack, _ = scmpc.constraint_from_single(
+                "lbx", dcbf_lbx, ">=", 0.0, soft=True
+            )
+            scmpc.constraint_from_single("ubx", dcbf_ubx + slack, ">=", 0.0)
         else:
-            scmpc.constraint("lbx", dcbf_lbx, ">=", 0.0)
-            scmpc.constraint("ubx", dcbf_ubx, ">=", 0.0)
+            scmpc.constraint_from_single("lbx", dcbf_lbx, ">=", 0.0)
+            scmpc.constraint_from_single("ubx", dcbf_ubx, ">=", 0.0)
     else:
         # impose the safety constraints normally (not via CBFs), taking care of the
         # initial state and slack if needed
