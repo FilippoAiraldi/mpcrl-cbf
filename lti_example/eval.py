@@ -149,9 +149,11 @@ if __name__ == "__main__":
         help="Whether to bound the initial state in the MPC controller.",
     )
     group.add_argument(
-        "--dlqr-terminal-cost",
-        action="store_true",
-        help="Whether to use the DLQR terminal cost in the MPC controller.",
+        "--terminal-cost",
+        choices=("dlqr", "pwqnn"),
+        nargs="*",
+        default=set(),
+        help="Which type of terminal cost to use in the MPC controller.",
     )
     group = parser.add_argument_group(
         "Scenario MPC (SCMPC) options (on top of MPC options)"

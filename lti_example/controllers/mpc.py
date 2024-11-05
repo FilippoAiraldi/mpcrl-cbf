@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
 import casadi as cs
 import numpy as np
@@ -7,9 +7,12 @@ import numpy.typing as npt
 from controllers.options import OPTS
 from csnlp import Nlp
 from csnlp.wrappers import Mpc
+from csnn.convex import PwqNN
 from env import ConstrainedLtiEnv as Env
 from mpcrl.util.control import dlqr
+from mpcrl.util.seeding import RngType
 
+from util.nn import nn2function
 from util.output_supress import nostdout
 
 
@@ -18,8 +21,9 @@ def create_mpc(
     dcbf: bool,
     soft: bool,
     bound_initial_state: bool,
-    dlqr_terminal_cost: bool,
+    terminal_cost: set[Literal["dlqr", "pwqnn"]],
     env: Env | None = None,
+    seed: RngType = None,
     *_: Any,
     **__: Any,
 ) -> Mpc[cs.MX]:
@@ -39,12 +43,17 @@ def create_mpc(
         If `False`, the initial state is excluded from the state constraints. Otherwise,
         the initial state is also constrained (useful for RL for predicting the value
         functions of the current state). Disregarded if `dcbf` is `True`.
-    dlqr_terminal_cost : bool
-        If `True`, the quadratic DLQR terminal cost (i.e., the solution to the
-        corresponding Riccati equation) is added to the terminal cost.
+    terminal_cost : set of {"dlqr", "pwqnn"}
+        The type of terminal cost to use. If "dlqr", the terminal cost is the solution
+        to the discrete-time LQR problem. If "pwqnn", a piecewise quadratic neural
+        network is used to approximate the terminal cost. Can also be a set of multiple
+        terminal costs to use, at which point these are summed together; can also be an
+        empty set, in which case no terminal cost is used.
     env : ConstrainedLtiEnv, optional
         The environment to build the MPC for. If `None`, a new default environment is
         instantiated.
+    seed : RngType, optional
+        The seed used during creating of the SCMPC controller.
 
     Returns
     -------
@@ -63,7 +72,7 @@ def create_mpc(
 
     # create actions and get states when rolling the dynamics along the horizon
     mpc = Mpc(Nlp("MX"), horizon, shooting="single")
-    mpc.state("x", ns)
+    _, x0 = mpc.state("x", ns)
     u, _ = mpc.action("u", na, lb=-a_bnd, ub=a_bnd)
     mpc.set_linear_dynamics(A, B)
     x = mpc.states["x"]
@@ -98,16 +107,26 @@ def create_mpc(
     J = sum(cs.bilin(Q, x[:, i]) + cs.bilin(R, u[:, i]) for i in range(horizon))
 
     # compute terminal cost
-    if dlqr_terminal_cost:
+    xT = x[:, -1]
+    if "dlqr" in terminal_cost:
         _, P = dlqr(A, B, Q, R)
-        J += cs.bilin(P, x[:, -1])
+        J += cs.bilin(P, xT)
+    if "pwqnn" in terminal_cost:
+        pwqnn = PwqNN(ns, 16)
+        nnfunc = nn2function(pwqnn)
+        nnfunc = nnfunc.factory("F", nnfunc.name_in(), ("y", "grad:y:x", "hess:y:x:x"))
+        weights = dict(pwqnn.init_parameters(seed=seed))
+        output = nnfunc(x=x0, **weights)
+        dx = xT - x0
+        val, jac, hess = output["y"], output["grad_y_x"], output["hess_y_x_x"]
+        J += val + cs.dot(jac, dx) + 0.5 * cs.bilin(hess, dx)
 
     # add penalty cost (if needed) and set the solver
     if soft:
         J += env.constraint_penalty * cs.sum1(cs.sum2(slack))
     mpc.minimize(J)
     with nostdout():
-        mpc.init_solver(OPTS["qpoases"], "qpoases")
+        mpc.init_solver(OPTS["qpoases"], "qpoases", type="conic")
     return mpc
 
 
