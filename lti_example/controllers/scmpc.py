@@ -119,9 +119,9 @@ def create_scmpc(
         J += cs.bilin(P, xT)
     if "pwqnn" in terminal_cost:
         pwqnn = PwqNN(ns, 16)
-        nnfunc = nn2function(pwqnn)
+        nnfunc = nn2function(pwqnn, prefix="pwqnn")
         nnfunc = nnfunc.factory("F", nnfunc.name_in(), ("y", "grad:y:x", "hess:y:x:x"))
-        weights = dict(pwqnn.init_parameters(seed=seed))
+        weights = dict(pwqnn.init_parameters(prefix="pwqnn", seed=seed))
         output = nnfunc(x=x0, **weights)
         dx = xT - x0
         val, jac, hess = output["y"], output["grad_y_x"], output["hess_y_x_x"]
