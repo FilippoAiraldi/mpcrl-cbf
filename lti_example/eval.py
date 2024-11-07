@@ -94,7 +94,7 @@ def simulate_controller_once(
     """
     # create env and controller only once
     env = Env(timesteps)
-    controller = get_controller(controller_name, **controller_kwargs)
+    controller = get_controller(controller_name, **controller_kwargs, seed=seed)
 
     # simulate the controller on the environment for n_eval evaluations
     R = np.zeros(n_eval)
@@ -123,7 +123,7 @@ if __name__ == "__main__":
     group = parser.add_argument_group("Choice of controller")
     group.add_argument(
         "controller",
-        choices=["dlqr", "dclf-dcbf", "mpc", "scmpc"],
+        choices=("dlqr", "dclf-dcbf", "mpc", "scmpc"),
         help="The controller to use for the simulation.",
     )
     group = parser.add_argument_group("MPC options")
@@ -204,6 +204,7 @@ if __name__ == "__main__":
         "--n-jobs", type=int, default=1, help="Number of parallel processes."
     )
     args = parser.parse_args()
+    args.terminal_cost = set(args.terminal_cost)
 
     # prepare arguments to the simulation
     controller = args.controller
@@ -212,7 +213,7 @@ if __name__ == "__main__":
         "dcbf": args.dcbf,
         "soft": args.soft,
         "bound_initial_state": args.bound_initial_state,
-        "dlqr_terminal_cost": args.dlqr_terminal_cost,
+        "terminal_cost": args.terminal_cost,
         "scenarios": args.scenarios,
     }
     n_eval = args.n_eval
