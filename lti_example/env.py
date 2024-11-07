@@ -1,4 +1,4 @@
-from typing import Any, TypeAlias, TypeVar
+from typing import Any, TypeAlias
 
 import casadi as cs
 import gymnasium as gym
@@ -10,7 +10,6 @@ from util.loose_box import LooseBox
 
 ObsType: TypeAlias = npt.NDArray[np.floating]
 ActType: TypeAlias = npt.NDArray[np.floating]
-SymType = TypeVar("SymType", cs.SX, cs.MX)
 
 
 MAX_INV_SET_V = 0.99 * np.asarray(  # computed with MATLAB MPT3 toolbox

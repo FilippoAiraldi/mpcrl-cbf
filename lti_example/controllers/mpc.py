@@ -13,7 +13,7 @@ from mpcrl.util.control import dlqr
 from mpcrl.util.seeding import RngType
 
 from util.nn import nn2function
-from util.output_supress import nostdout
+from util.wrappers import nostdout
 
 
 def create_mpc(

@@ -11,12 +11,6 @@ from joblib import Parallel, delayed
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from controllers import (
-    get_dclf_dcbf_controller,
-    get_dlqr_controller,
-    get_mpc_controller,
-    get_scmpc_controller,
-)
 from env import ConstrainedLtiEnv as Env
 
 
@@ -46,13 +40,13 @@ def get_controller(
         Raises an error if the controller name is not recognized.
     """
     if controller_name == "dlqr":
-        func = get_dlqr_controller
+        from controllers.dlqr import get_dlqr_controller as func
     elif controller_name == "dclf-dcbf":
-        func = get_dclf_dcbf_controller
+        from controllers.dclf_dcbf import get_dclf_dcbf_controller as func
     elif controller_name == "mpc":
-        func = get_mpc_controller
+        from controllers.mpc import get_mpc_controller as func
     elif controller_name == "scmpc":
-        func = get_scmpc_controller
+        from controllers.scmpc import get_scmpc_controller as func
     else:
         raise ValueError(f"Unknown controller: {controller_name}")
     return func(*args, **kwargs)
