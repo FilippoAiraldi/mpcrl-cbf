@@ -59,9 +59,7 @@ def simulate_controller_once(
     timesteps: int,
     reset_kwargs: dict[str, Any],
     seed: int,
-) -> tuple[
-    float, list[npt.NDArray[np.floating]], list[npt.NDArray[np.floating]], list[float]
-]:
+) -> tuple[npt.NDArray[np.floating], ...]:
     """Simulates one episode of the constrained LTI environment using the given
     controller.
 
@@ -82,9 +80,9 @@ def simulate_controller_once(
 
     Returns
     -------
-    float, tuple of two lists of arrays, and a list of floats
-        Returns the total cost of the episode, a tuple of two lists containing
-        actions and states arrays, respectively, and a list of solution times.
+    4 float arrays
+        Returns the total cost for each episode, two arrays containing the  actions and
+        states trajectories respectively, and an array of solution computation times.
     """
     # create env and controller only once
     env = Env(timesteps)
@@ -234,10 +232,14 @@ if __name__ == "__main__":
             path = "lti_example" / path
         path.mkdir(parents=True, exist_ok=True)
         fn = str(path / args.save)
-        save(fn, **data_dict, args=args.__dict__, compression="mat")
+        save(fn, **data_dict, args=args.__dict__, compression="lzma")
     if args.plot or not args.save:
         import matplotlib.pyplot as plt
-        from plot import plot_states_and_actions_and_return
+        from plot import plot_returns, plot_solver_times, plot_states_and_actions
 
-        plot_states_and_actions_and_return([data_dict])
+        data = [data_dict]
+        plot_states_and_actions(data)
+        plot_states_and_actions(data)
+        plot_returns(data)
+        plot_solver_times(data)
         plt.show()
