@@ -32,13 +32,13 @@ def nostdout():
 class SuppressOutput(wrappers.Wrapper[SymType]):
     """A wrapper class that suppresses the output of the solver to console."""
 
-    def init_solver(self, *args: Any, **kwds: Any) -> Any:
+    def init_solver(self, *args: Any, **kwargs: Any) -> Any:
         with nostdout():
-            return super().init_solver(*args, **kwds)
+            return self.nlp.init_solver(*args, **kwargs)
 
-    def __call__(self, *args: Any, **kwds: Any) -> Any:
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         with nostdout():
-            return super().__call__(*args, **kwds)
+            return self.nlp.__call__(*args, **kwargs)
 
 
 class RecordSolverTime(wrappers.Wrapper[SymType]):
@@ -48,7 +48,7 @@ class RecordSolverTime(wrappers.Wrapper[SymType]):
         super().__init__(nlp)
         self.solver_time: list[float] = []
 
-    def __call__(self, *args: Any, **kwds: Any) -> Any:
-        sol = super().__call__(*args, **kwds)
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        sol = self.nlp.__call__(*args, **kwargs)
         self.solver_time.append(sol.stats["t_proc_total"])
         return sol
