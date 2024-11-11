@@ -24,8 +24,9 @@ def create_scmpc(
     bound_initial_state: bool,
     terminal_cost: set[Literal["dlqr", "pwqnn"]],
     env: ConstrainedLtiEnv | None = None,
-    seed: RngType = None,
-) -> ScenarioBasedMpc[cs.MX]:
+    *_: Any,
+    **__: Any,
+) -> tuple[ScenarioBasedMpc[cs.MX], PwqNN | None]:
     """Creates a linear Scenario-based MPC controller for the `ConstrainedLtiEnv` env.
 
     Parameters
@@ -53,13 +54,12 @@ def create_scmpc(
     env : ConstrainedLtiEnv, optional
         The environment to build the SCMPC for. If `None`, a new default environment is
         instantiated.
-    seed : RngType, optional
-        The seed used during creating of the SCMPC controller.
 
     Returns
     -------
-    Mpc
-        The single-shooting SCMPC controller.
+    Mpc and PwqNN (optional)
+        The single-shooting SCMPC controller, as well as the piecewise quadratic
+        terminal cost neural net if `"pwqnn"` is in `terminal_cost`; otherwise, `None`.
     """
     if env is None:
         env = ConstrainedLtiEnv(0)
@@ -83,7 +83,7 @@ def create_scmpc(
     # is needed to penalize the current state in RL, but can be removed in other cases
     if dcbf:
         h = env.safety_constraints(x)
-        alpha = 0.99
+        alpha = scmpc.parameter("alpha")
         # dcbf = h[:, 1:] - (1 - alpha) * h[:, :-1]  # vanilla CBF constraints
         decay = cs.repmat(cs.power(1 - alpha, range(1, horizon + 1)).T, h.shape[0], 1)
         dcbf = h[:, 1:] - decay * h[:, 0]  # unrolled CBF constraints
@@ -114,6 +114,7 @@ def create_scmpc(
 
     # compute terminal cost
     xT = x[:, -1]
+    pwqnn = None
     if "dlqr" in terminal_cost:
         _, P = dlqr(A, B, Q, R)
         J += cs.bilin(P, xT)
@@ -121,7 +122,10 @@ def create_scmpc(
         pwqnn = PwqNN(ns, 16)
         nnfunc = nn2function(pwqnn, prefix="pwqnn")
         nnfunc = nnfunc.factory("F", nnfunc.name_in(), ("y", "grad:y:x", "hess:y:x:x"))
-        weights = dict(pwqnn.init_parameters(prefix="pwqnn", seed=seed))
+        weights = {
+            n: scmpc.parameter(n, p.shape)
+            for n, p in pwqnn.parameters(prefix="pwqnn", skip_none=True)
+        }
         output = nnfunc(x=x0, **weights)
         dx = xT - x0
         val, jac, hess = output["y"], output["grad_y_x"], output["hess_y_x_x"]
@@ -133,18 +137,20 @@ def create_scmpc(
     scmpc.minimize_from_single(J)
     with nostdout():
         scmpc.init_solver(OPTS["qpoases"], "qpoases", type="conic")
-    return scmpc
+    return scmpc, pwqnn
 
 
 def get_scmpc_controller(
-    *args: Any, **kwargs: Any
+    *args: Any, seed: RngType = None, **kwargs: Any
 ) -> Callable[[npt.NDArray[np.floating]], tuple[npt.NDArray[np.floating], float]]:
     """Returns the Scenario-based MPC controller as a callable function.
 
     Parameters
     ----------
     args, kwargs
-        The arguments to pass to the `create_mpc` method.
+        The arguments to pass to the `create_scmpc` method.
+    seed : RngType, optional
+        The seed used during creating of the PwqNN weights, if necessary.
 
     Returns
     -------
@@ -152,13 +158,30 @@ def get_scmpc_controller(
         A controller that maps the current state to the desired action, and returns also
         the time it took to compute the action.
     """
-    # create the SCMPC and convert it to a function (faster than going through csnlp)
-    scmpc = create_scmpc(*args, **kwargs)
+    # create the SCMPC
+    scmpc, pwqnn = create_scmpc(*args, **kwargs)
+
+    # group its parameters (CBF decay rate, and NN weights) into a vector and assign
+    # numerical values to them
+    sym_weights_, num_weights_ = {}, {}
+    if "alpha" in scmpc.parameters:
+        sym_weights_["alpha"] = scmpc.parameters["alpha"]
+        num_weights_["alpha"] = 0.99
+    if pwqnn is not None:
+        nn_weights = dict(pwqnn.init_parameters(prefix="pwqnn", seed=seed))
+        sym_weights_.update((k, scmpc.parameters[k]) for k in nn_weights)
+        num_weights_.update(nn_weights)
+    sym_weights = cs.vvcat(sym_weights_.values())
+    num_weights = cs.vvcat(num_weights_.values())
+    disturbances = cs.vvcat(scmpc.disturbances.values())  # cannot do otherwise
+
+    # convert the SCMPC object to a function (faster than going through csnlp)
     x0 = scmpc.initial_states["x_0"]
     u_opt = scmpc.actions["u"][:, 0]
     primals = scmpc.nlp.x
-    disturbances = cs.vvcat(scmpc.disturbances.values())  # cannot do otherwise
-    func = scmpc.nlp.to_function("scmpc", (x0, disturbances, primals), (u_opt, primals))
+    func = scmpc.nlp.to_function(
+        "scmpc", (x0, sym_weights, disturbances, primals), (u_opt, primals)
+    )
     inner_solver = scmpc.nlp.solver
     last_sol = 0.0
     horizon = scmpc.prediction_horizon
@@ -168,7 +191,7 @@ def get_scmpc_controller(
         nonlocal last_sol
         disturbances = env.sample_disturbance_profiles(n_scenarios)[:, :horizon]
         with nostdout():
-            u_opt, last_sol = func(x, disturbances.reshape(-1), last_sol)
+            u_opt, last_sol = func(x, num_weights, disturbances.reshape(-1), last_sol)
         return u_opt.toarray().reshape(-1), inner_solver.stats()["t_proc_total"]
 
     return _f
