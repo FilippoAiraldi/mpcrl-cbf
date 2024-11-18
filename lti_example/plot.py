@@ -243,6 +243,21 @@ def plot_training(
         ax._label_outer_xaxis(skip_non_rectangular_axes=False)
 
 
+def plot_terminal_cost_evolution(
+    data: Collection[dict[str, npt.NDArray[np.floating]]],
+    args: Collection[dict[str, Any]],
+    *_: Any,
+    **__: Any,
+) -> None:
+    terminal_cost_components = [arg.get("terminal_cost", set()) for arg in args]
+    if not any("pwqnn" in cmp for cmp in terminal_cost_components):
+        return
+
+    for i, (arg, datum) in enumerate(zip(args, data)):
+        f"C{i}"
+        # TODO
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Plotting of simulations of the constrained LTI environment.",
@@ -256,18 +271,21 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
+    sim_args = []
     data = []
     unique_names = []
     for filename in args.filename:
         if filename in unique_names:
             continue
-        sim_args, datum = load_single_file(filename)
+        sim_arg, datum = load_single_file(filename)
         unique_names.append(filename)
+        sim_args.append(sim_arg)
         data.append(datum)
-        print(filename.upper(), f"Args: {sim_args}\n", sep="\n")
+        print(filename.upper(), f"Args: {sim_arg}\n", sep="\n")
 
-    plot_states_and_actions(data, unique_names)
-    plot_returns(data, unique_names)
-    plot_solver_times(data, unique_names)
-    plot_training(data, unique_names)
+    # plot_states_and_actions(data, unique_names)
+    # plot_returns(data, unique_names)
+    # plot_solver_times(data, unique_names)
+    # plot_training(data, unique_names)
+    plot_terminal_cost_evolution(data, sim_args)
     plt.show()

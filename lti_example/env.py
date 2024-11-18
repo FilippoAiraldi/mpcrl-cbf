@@ -26,6 +26,11 @@ MAX_INV_SET_V = 0.99 * np.asarray(  # computed with MATLAB MPT3 toolbox
 )
 
 
+# TODO: define the DCBF gamma here
+# TODO: make env reward use the DCBF constraint
+# TODO: if constrained LQG works, have to use time-independent disturbances
+
+
 class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
     """
     ## Description
