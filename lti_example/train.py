@@ -209,7 +209,6 @@ if __name__ == "__main__":
         default=5e-3,
         help="Learning rate of the RL algorithm.",
     )
-    # TODO: make the decay faster
     group.add_argument(
         "--exploration-eps",
         type=float,
@@ -357,7 +356,6 @@ if __name__ == "__main__":
             plot_returns,
             plot_solver_times,
             plot_states_and_actions,
-            plot_terminal_cost_evolution,
             plot_training,
         )
 
@@ -367,5 +365,4 @@ if __name__ == "__main__":
         plot_returns(data)
         plot_solver_times(data)
         plot_training(data)
-        plot_terminal_cost_evolution(data)
         plt.show()

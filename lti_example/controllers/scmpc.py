@@ -141,10 +141,7 @@ def create_scmpc(
 
 
 def get_scmpc_controller(
-    *args: Any,
-    seed: RngType = None,
-    **kwargs: Any,
-    # TODO: add argument to have NN weights loaded from file
+    *args: Any, seed: RngType = None, **kwargs: Any
 ) -> Callable[[npt.NDArray[np.floating]], tuple[npt.NDArray[np.floating], float]]:
     """Returns the Scenario-based MPC controller as a callable function.
 
