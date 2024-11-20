@@ -149,11 +149,10 @@ def plot_single_violin(
 
         for line in linecollection.get_paths():
             value = line.vertices[0, int_vert]
-            length = abs(interp(value)) - position
-            print(side, length)
+            vertex = interp(value)
             if side == "low":
-                line.vertices[0, int_not_vert] = position - length
+                line.vertices[0, int_not_vert] = vertex
             elif side == "high":
-                line.vertices[1, int_not_vert] = position + length
+                line.vertices[1, int_not_vert] = vertex
             else:
-                line.vertices[:, int_not_vert] = [position - length, position + length]
+                line.vertices[:, int_not_vert] = [vertex, 2 * position - vertex]

@@ -71,24 +71,6 @@ def train_one_agent(
     dict[str, npt.NDArray[np.floating]],
     npt.NDArray[np.floating],
 ]:
-    """
-
-    Parameters
-    ----------
-    controller_name : {"dlqr", "dclf-dcbf", "mpc", "scmpc"}
-        The name of the controller to simulate.
-    controller_kwargs : dict of str to any
-
-    n_eval : int
-        The number of evaluations to perform for this controller.
-
-
-
-    Returns
-    -------
-    4 float arrays
-
-    """
     """Trains an agent with the specified algorithm on the constrained LTI environment.
 
     Parameters

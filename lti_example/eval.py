@@ -239,7 +239,6 @@ if __name__ == "__main__":
 
         data = [data_dict]
         plot_states_and_actions(data)
-        plot_states_and_actions(data)
         plot_returns(data)
         plot_solver_times(data)
         plt.show()
