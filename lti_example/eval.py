@@ -118,7 +118,9 @@ if __name__ == "__main__":
         choices=("dlqr", "dclf-dcbf", "mpc", "scmpc"),
         help="The controller to use for the simulation.",
     )
-    group = parser.add_argument_group("MPC options")
+    group = parser.add_argument_group(
+        "MPC options (used only when `controller=mpc` or `controller=scmpc`)"
+    )
     group.add_argument(
         "--horizon",
         type=int,
@@ -148,7 +150,7 @@ if __name__ == "__main__":
         help="Which type of terminal cost to use in the MPC controller.",
     )
     group = parser.add_argument_group(
-        "Scenario MPC (SCMPC) options (on top of MPC options)"
+        "Scenario MPC (SCMPC) options (used only when `controller=scmpc`)"
     )
     group.add_argument(
         "--scenarios",
