@@ -4,7 +4,7 @@ from typing import Any
 import casadi as cs
 import numpy as np
 import numpy.typing as npt
-from controllers.options import OPTS
+from controllers.config import SOLVER_OPTS
 from csnlp import Nlp
 from env import ConstrainedLtiEnv as Env
 from mpcrl.util.control import dcbf, dlqr
@@ -49,7 +49,7 @@ def create_dclf_dcbf_qcqp(env: Env | None = None, *_: Any, **__: Any) -> Nlp[cs.
 
     # it is a QCQP problem due to the CLF constraint, so we have to solve it nonlinearly
     # as casadi does not support SOCP yet
-    nlp.init_solver(OPTS["fatrop"], "fatrop", "nlp")
+    nlp.init_solver(SOLVER_OPTS["fatrop"], "fatrop", "nlp")
     return nlp
 
 

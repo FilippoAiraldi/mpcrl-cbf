@@ -4,7 +4,7 @@ from typing import Any, Literal
 import casadi as cs
 import numpy as np
 import numpy.typing as npt
-from controllers.options import OPTS
+from controllers.config import PWQNN_HIDDEN, SOLVER_OPTS
 from csnlp import Nlp
 from csnlp.wrappers import ScenarioBasedMpc
 from csnn.convex import PwqNN
@@ -119,7 +119,7 @@ def create_scmpc(
         _, P = dlqr(A, B, Q, R)
         J += cs.bilin(P, xT)
     if "pwqnn" in terminal_cost:
-        pwqnn = PwqNN(ns, 16)
+        pwqnn = PwqNN(ns, PWQNN_HIDDEN)
         nnfunc = nn2function(pwqnn, prefix="pwqnn")
         nnfunc = nnfunc.factory("F", nnfunc.name_in(), ("y", "grad:y:x", "hess:y:x:x"))
         weights = {
@@ -136,7 +136,7 @@ def create_scmpc(
         J += env.constraint_penalty * cs.sum1(cs.sum2(slack))
     scmpc.minimize_from_single(J)
     with nostdout():
-        scmpc.init_solver(OPTS["qpoases"], "qpoases", type="conic")
+        scmpc.init_solver(SOLVER_OPTS["qpoases"], "qpoases", type="conic")
     return scmpc, pwqnn
 
 
