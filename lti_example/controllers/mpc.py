@@ -4,7 +4,7 @@ from typing import Any, Literal
 import casadi as cs
 import numpy as np
 import numpy.typing as npt
-from controllers.config import PWQNN_HIDDEN, SOLVER_OPTS
+from controllers.config import DCBF_GAMMA, PWQNN_HIDDEN, SOLVER_OPTS
 from csnlp import Nlp
 from csnlp.wrappers import Mpc
 from csnn.convex import PwqNN
@@ -79,10 +79,9 @@ def create_mpc(
     # is needed to penalize the current state in RL, but can be removed in other cases
     if dcbf:
         h = env.safety_constraints(x)
-        alpha = mpc.parameter("alpha")
-        # dcbf = h[:, 1:] - (1 - alpha) * h[:, :-1]  # vanilla CBF constraints
-        decay = cs.repmat(cs.power(1 - alpha, range(1, horizon + 1)).T, h.shape[0], 1)
-        dcbf = h[:, 1:] - decay * h[:, 0]  # unrolled CBF constraints
+        # dcbf = h[:, 1:] - (1 - DCBF_GAMMA) * h[:, :-1]  # vanilla CBF constraints
+        decays = cs.power(1 - DCBF_GAMMA, range(1, horizon + 1))
+        dcbf = h[:, 1:] - h[:, 0] @ decays.T  # unrolled CBF constraints
         dcbf_lbx, dcbf_ubx = cs.vertsplit_n(dcbf, 2)
         if soft:
             _, _, slack = mpc.constraint("lbx", dcbf_lbx, ">=", 0.0, soft=True)
@@ -153,12 +152,8 @@ def get_mpc_controller(
     # create the MPC
     mpc, pwqnn = create_mpc(*args, **kwargs)
 
-    # group its parameters (CBF decay rate, and NN weights) into a vector and assign
-    # numerical values to them
+    # group its NN parameters (if any) into a vector and assign numerical values to them
     sym_weights_, num_weights_ = {}, {}
-    if "alpha" in mpc.parameters:
-        sym_weights_["alpha"] = mpc.parameters["alpha"]
-        num_weights_["alpha"] = 0.99
     if pwqnn is not None:
         nn_weights = dict(pwqnn.init_parameters(prefix="pwqnn", seed=seed))
         sym_weights_.update((k, mpc.parameters[k]) for k in nn_weights)

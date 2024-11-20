@@ -40,7 +40,7 @@ def compute_value_func_on_partition(
     vs = np.empty(N)
     for k in range(N):
         i, j = partition[k]
-        sol = mpc.solve(pars={"x_0": xs[:, i, j], "alpha": 0.99})
+        sol = mpc.solve(pars={"x_0": xs[:, i, j]})
         vs[k] = np.inf if sol.infeasible or not sol.success else sol.f
     return partition, vs
 

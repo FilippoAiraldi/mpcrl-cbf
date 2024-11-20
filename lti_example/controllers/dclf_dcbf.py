@@ -4,7 +4,7 @@ from typing import Any
 import casadi as cs
 import numpy as np
 import numpy.typing as npt
-from controllers.config import SOLVER_OPTS
+from controllers.config import DCBF_GAMMA, SOLVER_OPTS
 from csnlp import Nlp
 from env import ConstrainedLtiEnv as Env
 from mpcrl.util.control import dcbf, dlqr
@@ -33,17 +33,16 @@ def create_dclf_dcbf_qcqp(env: Env | None = None, *_: Any, **__: Any) -> Nlp[cs.
     u, _, _ = nlp.variable("u", (na, 1), lb=-env.a_bound, ub=env.a_bound)
     delta, _, _ = nlp.variable("delta", lb=0)
     x_next = env.dynamics(x, u)
-    alpha_dclf = 0.5
-    alpha_dcbf = 0.5
+    dclf_gamma = 0.5
     penalty_delta = 10.0
 
     _, P = dlqr(env.A, env.B, env.Q, env.R)
     lyapunov = lambda x_: cs.bilin(P, x_)
     V = lyapunov(x)
     V_next = lyapunov(x_next)
-    nlp.constraint("dclf", V_next - (1 - alpha_dclf) * V, "<=", delta)
+    nlp.constraint("dclf", V_next - (1 - dclf_gamma) * V, "<=", delta)
     h = env.safety_constraints
-    dcbf_cnstr = dcbf(h, x, u, env.dynamics, [lambda y: alpha_dcbf * y])  # >= 0
+    dcbf_cnstr = dcbf(h, x, u, env.dynamics, [lambda y: DCBF_GAMMA * y])  # >= 0
     nlp.constraint("dcbf", dcbf_cnstr, ">=", 0)
     nlp.minimize(cs.bilin(env.R, u) + penalty_delta * delta)
 

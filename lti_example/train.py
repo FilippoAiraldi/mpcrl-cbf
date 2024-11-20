@@ -119,9 +119,7 @@ def train_one_agent(
 
     # initialize learnable parameters
     sym_pars = scmpc.parameters
-    learnable_pars_ = [  # DCBF exponential decay rate must be in (0, 1]
-        LearnableParameter("alpha", (1, 1), 0.99, 1e-3, 1.0, sym_pars["alpha"])
-    ]
+    learnable_pars_ = []
     if pwqnn is not None:
         for name, weight in pwqnn.init_parameters(prefix="pwqnn", seed=rng):
             if name.endswith("dot.weight"):
