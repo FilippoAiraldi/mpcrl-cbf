@@ -1,20 +1,26 @@
 import argparse
-import os
 import sys
 from collections.abc import Collection
+from pathlib import Path
 from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
 from csnlp.util.io import load
+from csnn.convex import PwqNN
+from joblib import Parallel, delayed
 from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Rectangle
+from mpcrl.util.control import dlqr
 
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+lti_dir = Path(__file__).parent
+sys.path.append(str(lti_dir.parent))
 
+from controllers.config import PWQNN_HIDDEN
 from env import ConstrainedLtiEnv as Env
 
+from util.nn import nn2function
 from util.visualization import plot_population, plot_single_violin
 
 plt.style.use("seaborn-v0_8-pastel")
@@ -243,6 +249,99 @@ def plot_training(
         ax._label_outer_xaxis(skip_non_rectangular_axes=False)
 
 
+def plot_terminal_cost_evolution(
+    data: Collection[dict[str, npt.NDArray[np.floating]]],
+    args: Collection[dict[str, Any]],
+    *_: Any,
+    **__: Any,
+) -> None:
+    """Plots the evolution of the terminal cost approximation in terms of normalized
+    RMSE and R^2 coefficient. This plot does not show anything if the data does not
+    contain training results.
+
+    Parameters
+    ----------
+    data : collection of dictionaries (str, arrays)
+        The dictionaries from different simulations, each potentially containing the
+        key `"updates_history"`.
+    args : collection of dictionaries (str, Any)
+        The arguments used to run the simulation scripts.
+    """
+    terminal_cost_components = [arg.get("terminal_cost", set()) for arg in args]
+    if not any("pwqnn" in cmp for cmp in terminal_cost_components):
+        return
+
+    value_func_dir = lti_dir / "value_func"
+    value_func_cache = {}
+
+    _, P = dlqr(Env.A, Env.B, Env.Q, Env.R)
+    pwqnn = nn2function(PwqNN(Env.ns, PWQNN_HIDDEN), prefix="pwqnn")
+    weight_names = pwqnn.name_in()[1:]
+
+    _, ax_nrmse = plt.subplots(1, 1, constrained_layout=True)
+    ax_r_squared = ax_nrmse.twinx()
+
+    for i, (arg, tcosts, datum) in enumerate(zip(args, terminal_cost_components, data)):
+        if "pwqnn" not in tcosts:
+            continue
+
+        # load the true value function
+        filename = "value_func_data"
+        if arg["dcbf"]:
+            filename += "_dcbf"
+        if arg["soft"]:
+            filename += "_soft"
+        filename += ".npz"
+        if filename in value_func_cache:
+            value_func_data = value_func_cache[filename]
+        else:
+            value_func_data = np.load(value_func_dir / filename)
+            value_func_cache[filename] = value_func_data
+
+        # compute value function evolution during learning
+        grid = value_func_data["grid"]
+        N = grid.size
+        n_agents, n_ep = arg["n_agents"], arg["n_episodes"] + 1
+        params_history = datum["updates_history"]
+
+        X = np.asarray(np.meshgrid(grid, grid))
+        Xf = X.reshape(Env.ns, -1)
+        V = np.zeros((n_agents, n_ep, N, N))
+        if "dlqr" in tcosts:
+            V += (X.transpose(1, 2, 0).dot(P) * X.transpose(1, 2, 0)).sum(-1)
+        if "pwqnn" in tcosts:
+
+            def func(a: int) -> np.ndarray:
+                V_ = np.empty((n_ep, N, N))
+                for e in range(n_ep):
+                    w = {n: params_history[n][a, e] for n in weight_names}
+                    V_[e] = pwqnn(x=Xf, **w)["y"].toarray().reshape(N, N)
+                return V_
+
+            V = np.asarray(
+                Parallel(n_jobs=n_agents)(delayed(func)(a) for a in range(n_agents))
+            )
+
+        # compute NRMSE and R^2
+        V_true = value_func_data["V"]
+        V_true[~np.isfinite(V_true)] = np.nan
+        residuals = np.square(V - V_true)
+        rmse = np.sqrt(np.nanmean(residuals, (2, 3)))
+        nrmse = rmse / (np.nanmax(V_true) - np.nanmin(V_true))
+        ss_total = np.nansum(np.square(V_true - np.nanmean(V_true)))
+        ss_residual = np.nansum(residuals, (2, 3))
+        r_squared = 1.0 - (ss_residual / ss_total)
+
+        c = f"C{i}"
+        episodes = np.arange(n_ep)
+        plot_population(ax_nrmse, episodes, nrmse, axis=0, color=c)
+        plot_population(ax_r_squared, episodes, r_squared, axis=0, color=c, ls="-.")
+
+    ax_nrmse.set_xlabel("Update")
+    ax_nrmse.set_ylabel(r"$NRMSE$")
+    ax_r_squared.set_ylabel(r"$R^2$")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Plotting of simulations of the constrained LTI environment.",
@@ -256,18 +355,21 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
+    sim_args = []
     data = []
     unique_names = []
     for filename in args.filename:
         if filename in unique_names:
             continue
-        sim_args, datum = load_single_file(filename)
+        sim_arg, datum = load_single_file(filename)
         unique_names.append(filename)
+        sim_args.append(sim_arg)
         data.append(datum)
-        print(filename.upper(), f"Args: {sim_args}\n", sep="\n")
+        print(filename.upper(), f"Args: {sim_arg}\n", sep="\n")
 
     plot_states_and_actions(data, unique_names)
     plot_returns(data, unique_names)
     plot_solver_times(data, unique_names)
     plot_training(data, unique_names)
+    plot_terminal_cost_evolution(data, sim_args)
     plt.show()
