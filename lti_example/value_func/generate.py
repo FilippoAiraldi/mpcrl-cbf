@@ -41,7 +41,7 @@ def compute_value_func_on_partition(
     for k in range(N):
         i, j = partition[k]
         sol = mpc.solve(pars={"x_0": xs[:, i, j]})
-        vs[k] = np.inf if sol.infeasible or not sol.success else sol.f
+        vs[k] = np.nan if sol.infeasible or not sol.success else sol.f
     return partition, vs
 
 
@@ -131,7 +131,7 @@ if __name__ == "__main__":
     group.add_argument(
         "--grid-side",
         type=int,
-        default=100,
+        default=300,
         help="Size of the side of the grid for which to compute the value function.",
     )
     group = parser.add_argument_group("Storing and plotting options")
@@ -167,8 +167,7 @@ if __name__ == "__main__":
         from matplotlib.ticker import LogLocator, FuncFormatter, MaxNLocator
 
         X, Y = np.meshgrid(grid_points, grid_points)
-        V_finite = V[np.isfinite(V)]
-        kwargs = {"vmin": V_finite.min(), "vmax": V_finite.max(), "cmap": "RdBu_r"}
+        kwargs = {"vmin": np.nanmin(V), "vmax": np.nanmax(V), "cmap": "RdBu_r"}
 
         fig = plt.figure(figsize=(10, 5), constrained_layout=True)
         ax1 = fig.add_subplot(1, 2, 1)

@@ -286,7 +286,7 @@ def plot_terminal_cost_evolution(
             continue
 
         # load the true value function
-        filename = "value_func_data"
+        filename = "data"
         if arg["dcbf"]:
             filename += "_dcbf"
         if arg["soft"]:
@@ -324,7 +324,6 @@ def plot_terminal_cost_evolution(
 
         # compute NRMSE and R^2
         V_true = value_func_data["V"]
-        V_true[~np.isfinite(V_true)] = np.nan
         residuals = np.square(V - V_true)
         rmse = np.sqrt(np.nanmean(residuals, (2, 3)))
         nrmse = rmse / (np.nanmax(V_true) - np.nanmin(V_true))
