@@ -189,7 +189,7 @@ def get_scmpc_controller(
 
     def _f(x, env: ConstrainedLtiEnv):
         nonlocal last_sol
-        disturbances = env.sample_disturbance_profiles(n_scenarios)[:, :horizon]
+        disturbances = env.sample_disturbance_profiles(n_scenarios, horizon)
         with nostdout():
             u_opt, last_sol = func(x, num_weights, disturbances.reshape(-1), last_sol)
         return u_opt.toarray().reshape(-1), inner_solver.stats()["t_proc_total"]

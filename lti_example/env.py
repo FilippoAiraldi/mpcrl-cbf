@@ -42,6 +42,10 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
 
     The action is an array of shape `(na,)`, where `na = 2`, bounded to `[-0.5, 0.5]`.
 
+    ## Disturbances
+
+    There is a disturbance acting on the system's dynamics.
+
     ## Rewards/Costs
 
     The reward here is intended as an linear quadratic regulation (LQR) cost, thus it
@@ -78,9 +82,7 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
         self.observation_space = LooseBox(-np.inf, np.inf, (self.ns,), np.float64)
         self.action_space = LooseBox(-a_max, a_max, (self.na,), np.float64)
         self._sampler = ConvexPolytopeUniformSampler(MAX_INV_SET_V)
-        self._max_timesteps = T = max_timesteps
-        self._mean_disturbances = np.zeros(T)
-        self._cov_disturbances = np.eye(T) + np.ones((T, T)) * 0.1
+        self._max_timesteps = max_timesteps
         # build also the symbolic dynamics and safety constraints
         x = cs.MX.sym("x", self.ns)
         u = cs.MX.sym("u", self.na)
@@ -108,7 +110,6 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
             x = self.np_random.uniform(points.min(0), points.max(0), size=self.ns)
         assert self.observation_space.contains(x), f"invalid initial state {x}"
         self._x = x
-        self._dist_profile = self.sample_disturbance_profiles(1)
         self._t = 0
         return x, {}
 
@@ -118,7 +119,7 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
         u = np.asarray(action).reshape(self.na)
         assert self.action_space.contains(u), f"invalid action {u}"
         x = self._x
-        w = self._dist_profile[:, self._t]
+        w = self.sample_disturbance_profiles(1, 1)[0]
         x_new = np.dot(self.A, x) + np.dot(self.B, u) + np.dot(self.D, w)
         assert self.observation_space.contains(x_new), f"invalid new state {x_new}"
         self._x = x_new
@@ -135,15 +136,25 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
             + self.constraint_penalty * (lb_violation + ub_violation)
         )
 
-    def sample_disturbance_profiles(self, n: int) -> npt.NDArray[np.floating]:
+    def sample_disturbance_profiles(
+        self, n: int, length: int | None = None
+    ) -> npt.NDArray[np.floating]:
         """Samples i.i.d. disturbance profiles from the disturbance profile's
-        distribution. Note that disturbances are correlated at different time steps.
+        distribution.
+
+        Parameters
+        ----------
+        n : int
+            The number of disturbance profiles to sample.
+        length : int, optional
+            The number of timesteps in each disturbance profile. If `None`, the
+            maximum number of timesteps is used.
 
         Returns
         -------
         array
-            An array of shape `(n, max_timesteps)` containing the disturbance profiles.
+            An array of shape `(n, length)` containing the disturbance profiles.
         """
-        return self.np_random.multivariate_normal(
-            self._mean_disturbances, self._cov_disturbances, size=n
-        )
+        if length is None:
+            length = self._max_timesteps
+        return self.np_random.normal(0.0, 1.0, size=(n, length))
