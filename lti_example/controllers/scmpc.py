@@ -140,7 +140,10 @@ def create_scmpc(
 
 
 def get_scmpc_controller(
-    *args: Any, seed: RngType = None, **kwargs: Any
+    *args: Any,
+    seed: RngType = None,
+    nn_weights: dict[str, npt.NDArray[np.floating]] | None = None,
+    **kwargs: Any,
 ) -> Callable[[npt.NDArray[np.floating]], tuple[npt.NDArray[np.floating], float]]:
     """Returns the Scenario-based MPC controller as a callable function.
 
@@ -150,6 +153,9 @@ def get_scmpc_controller(
         The arguments to pass to the `create_scmpc` method.
     seed : RngType, optional
         The seed used during creating of the PwqNN weights, if necessary.
+    nn_weights : dict of (str, array), optional
+        The neural network weights to use in the controller. If `None`, the weights are
+        initialized randomly.
 
     Returns
     -------
@@ -163,9 +169,12 @@ def get_scmpc_controller(
     # group its NN parameters (if any) into a vector and assign numerical values to them
     sym_weights_, num_weights_ = {}, {}
     if pwqnn is not None:
-        nn_weights = dict(pwqnn.init_parameters(prefix="pwqnn", seed=seed))
-        sym_weights_.update((k, scmpc.parameters[k]) for k in nn_weights)
-        num_weights_.update(nn_weights)
+        if nn_weights is None:
+            nn_weights = dict(pwqnn.init_parameters(prefix="pwqnn", seed=seed))
+        for n, weight in nn_weights.items():
+            if n in scmpc.parameters:
+                sym_weights_[n] = scmpc.parameters[n]
+                num_weights_[n] = weight
     sym_weights = cs.vvcat(sym_weights_.values())
     num_weights = cs.vvcat(num_weights_.values())
     disturbances = cs.vvcat(scmpc.disturbances.values())  # cannot do otherwise

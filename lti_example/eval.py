@@ -1,6 +1,6 @@
-import argparse
 import os
 import sys
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentError, ArgumentParser
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
@@ -58,6 +58,7 @@ def simulate_controller_once(
     n_eval: int,
     timesteps: int,
     reset_kwargs: dict[str, Any],
+    nn_weights: dict[str, npt.NDArray[np.floating]] | None,
     seed: int,
 ) -> tuple[npt.NDArray[np.floating], ...]:
     """Simulates one episode of the constrained LTI environment using the given
@@ -75,6 +76,9 @@ def simulate_controller_once(
         The number of timesteps to run each evaluation for.
     reset_kwargs : dict of str to any
         Optional arguments to pass to the environment's reset method.
+    nn_weights : dict of str to array-like, optional
+        The neural network weights to use in the controller. If `None`, the weights are
+        initialized randomly.
     seed : int
         The seed for the random number generator.
 
@@ -86,7 +90,9 @@ def simulate_controller_once(
     """
     # create env and controller only once
     env = Env(timesteps)
-    controller = get_controller(controller_name, **controller_kwargs, seed=seed)
+    controller = get_controller(
+        controller_name, **controller_kwargs, nn_weights=nn_weights, seed=seed
+    )
 
     # simulate the controller on the environment for n_eval evaluations
     R = np.zeros(n_eval)
@@ -108,9 +114,9 @@ def simulate_controller_once(
 
 if __name__ == "__main__":
     # parse script arguments
-    parser = argparse.ArgumentParser(
+    parser = ArgumentParser(
         description="Evaluation of controllers on the constrained LTI environment.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=ArgumentDefaultsHelpFormatter,
     )
     group = parser.add_argument_group("Choice of controller")
     group.add_argument(
@@ -179,6 +185,14 @@ if __name__ == "__main__":
         "environment is drawn from the contour or interior of the max. invariant set, "
         "or its bounding box.",
     )
+    group.add_argument(
+        "--from-file",
+        type=str,
+        default="",
+        help="Loads a trained learning-based controller from training results' file, "
+        "instead of randomly initializing it. If set, `--n-ctrl` is overwritten to the "
+        "number of controllers in the file. Only supported for `controller=scmpc`.",
+    )
     group = parser.add_argument_group("Storing and plotting options")
     group.add_argument(
         "--save",
@@ -200,6 +214,24 @@ if __name__ == "__main__":
     args = parser.parse_args()
     args.terminal_cost = set(args.terminal_cost)
 
+    # if a training file is specified, load the last learnable weights from it and
+    # overwrite the number of controllers
+    if args.from_file:
+        if args.controller != "scmpc":
+            raise ArgumentError("Only SCMPC controllers can be loaded from file.")
+
+        from csnlp.util.io import load
+
+        data = load(args.from_file)
+        if "updates_history" not in data:
+            raise ArgumentError("No learning history found in the file.")
+        params = data["updates_history"]
+        args.n_ctrl = next(iter(params.values())).shape[0]
+        print(f"Loaded {args.n_ctrl} controllers from {args.from_file}.")
+        weights = [{n: w[i, -1] for n, w in params.items()} for i in range(args.n_ctrl)]
+    else:
+        weights = [None] * args.n_ctrl
+
     # prepare arguments to the simulation
     controller = args.controller
     controller_kwargs = {
@@ -218,9 +250,9 @@ if __name__ == "__main__":
     # run the simulations (possibly in parallel asynchronously)
     data = Parallel(n_jobs=args.n_jobs, verbose=10, return_as="generator_unordered")(
         delayed(simulate_controller_once)(
-            controller, controller_kwargs, n_eval, ts, reset_kwargs, seed
+            controller, controller_kwargs, n_eval, ts, reset_kwargs, weights_, seed
         )
-        for seed in seeds
+        for weights_, seed in zip(weights, seeds)
     )
     keys = ("cost", "actions", "states", "sol_times")
     data_dict = dict(zip(keys, map(np.asarray, zip(*data))))
