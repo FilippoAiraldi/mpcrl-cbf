@@ -3,7 +3,6 @@ from typing import Any, Literal
 import numpy as np
 import numpy.typing as npt
 from matplotlib.axes import Axes
-from scipy.interpolate import CubicSpline
 
 
 def plot_population(
@@ -123,36 +122,43 @@ def plot_single_violin(
     body = bodies[0]
     body.set_facecolor(color)
     body.set_alpha(alpha)
+    if color:
+        for k in ("cmeans", "cmedians", "cquantiles"):
+            if k in violin_data:
+                linecollection = violin_data[k]
+                linecollection.set_color(color)
 
-    violin_vertices = body.get_paths()[0].vertices
-    N = (violin_vertices.shape[0] - 1) // 2
-    if side in ("low", "both"):
-        X = violin_vertices[1:N, 0]
-        Y = violin_vertices[1:N, 1]
-    else:
-        X = violin_vertices[-2 : -N - 1 : -1, 0]
-        Y = violin_vertices[-2 : -N - 1 : -1, 1]
-    if vert:
-        X, Y = Y, X
-    interp = CubicSpline(X, Y)
+    # violin_vertices = body.get_paths()[0].vertices
+    # N = (violin_vertices.shape[0] - 1) // 2
+    # if side in ("low", "both"):
+    #     X = violin_vertices[1:N, 0]
+    #     Y = violin_vertices[1:N, 1]
+    # else:
+    #     X = violin_vertices[-2 : -N - 1 : -1, 0]
+    #     Y = violin_vertices[-2 : -N - 1 : -1, 1]
+    # if vert:
+    #     X, Y = Y, X
 
-    int_vert = int(vert)
-    int_not_vert = int(not vert)
+    # from scipy.interpolate import CubicSpline
 
-    for k in ("cmeans", "cmedians", "cquantiles"):
-        if k not in violin_data:
-            continue
+    # interp = CubicSpline(X, Y)
+    # int_vert = int(vert)
+    # int_not_vert = int(not vert)
 
-        linecollection = violin_data[k]
-        if color:
-            linecollection.set_color(color)
+    # for k in ("cmeans", "cmedians", "cquantiles"):
+    #     if k not in violin_data:
+    #         continue
 
-        for line in linecollection.get_paths():
-            value = line.vertices[0, int_vert]
-            vertex = interp(value)
-            if side == "low":
-                line.vertices[0, int_not_vert] = vertex
-            elif side == "high":
-                line.vertices[1, int_not_vert] = vertex
-            else:
-                line.vertices[:, int_not_vert] = [vertex, 2 * position - vertex]
+    #     linecollection = violin_data[k]
+    #     if color:
+    #         linecollection.set_color(color)
+
+    #     for line in linecollection.get_paths():
+    #         value = line.vertices[0, int_vert]
+    #         vertex = interp(value)
+    #         if side == "low":
+    #             line.vertices[0, int_not_vert] = vertex
+    #         elif side == "high":
+    #             line.vertices[1, int_not_vert] = vertex
+    #         else:
+    #             line.vertices[:, int_not_vert] = [vertex, 2 * position - vertex]

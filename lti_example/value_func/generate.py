@@ -99,8 +99,7 @@ def compute_value_func(
     # gather the results
     V = np.empty((grid_side, grid_side))
     for partition, vs in data:
-        for (i, j), v in zip(partition, vs):
-            V[i, j] = v
+        V[partition[:, 0], partition[:, 1]] = vs
     return grid, V
 
 

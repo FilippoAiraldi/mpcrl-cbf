@@ -310,17 +310,24 @@ def plot_terminal_cost_evolution(
         if "dlqr" in tcosts:
             V += (X.transpose(1, 2, 0).dot(P) * X.transpose(1, 2, 0)).sum(-1)
         if "pwqnn" in tcosts:
+            n_jobs = 8
+            partitions = np.array_split(list(np.ndindex((n_agents, n_ep))), n_jobs)
 
-            def func(a: int) -> np.ndarray:
-                V_ = np.empty((n_ep, N, N))
-                for e in range(n_ep):
-                    w = {n: params_history[n][a, e] for n in weight_names}
-                    V_[e] = pwqnn(x=Xf, **w)["y"].toarray().reshape(N, N)
-                return V_
+            def func(partition):
+                n_elem = partition.shape[0]
+                V_ = np.empty((n_elem, N, N))
+                for i in range(n_elem):
+                    agent, ep = partition[i]
+                    w = {n: params_history[n][agent, ep] for n in weight_names}
+                    V_[i] = pwqnn(x=Xf, **w)["y"].toarray().reshape(N, N)
+                return partition, V_
 
-            V = np.asarray(
-                Parallel(n_jobs=n_agents)(delayed(func)(a) for a in range(n_agents))
+            data = Parallel(n_jobs=n_jobs, return_as="generator_unordered")(
+                delayed(func)(p) for p in partitions
             )
+            V = np.empty((n_agents, n_ep, N, N))
+            for partition, V_ in data:
+                V[partition[:, 0], partition[:, 1]] = V_
 
         # compute NRMSE and R^2
         V_true = value_func_data["V"]
