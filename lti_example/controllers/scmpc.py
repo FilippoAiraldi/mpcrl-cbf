@@ -135,7 +135,7 @@ def create_scmpc(
         J += env.constraint_penalty * cs.sum1(cs.sum2(slack))
     scmpc.minimize_from_single(J)
     with nostdout():
-        scmpc.init_solver(SOLVER_OPTS["qpoases"], "qpoases", type="conic")
+        scmpc.init_solver(SOLVER_OPTS["gurobi"], "gurobi", type="conic")
     return scmpc, pwqnn
 
 

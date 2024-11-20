@@ -240,18 +240,18 @@ if __name__ == "__main__":
     )
     group = parser.add_argument_group("Simulation options")
     group.add_argument(
-        "--n-agents", type=int, default=2, help="Number of agents to train."
+        "--n-agents", type=int, default=10, help="Number of agents to train."
     )
     group.add_argument(
         "--n-episodes",
         type=int,
-        default=10,
+        default=1000,
         help="Number of training episodes per agent.",
     )
     group.add_argument(
         "--timesteps",
         type=int,
-        default=20,
+        default=30,
         help="Number of timesteps per each training episode.",
     )
     group.add_argument(
