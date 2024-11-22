@@ -11,6 +11,7 @@ import numpy.typing as npt
 from csnlp.util.io import load
 from csnn.convex import PwqNN
 from joblib import Parallel, delayed
+from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Rectangle
 from mpcrl.util.control import dlqr
@@ -279,10 +280,18 @@ def plot_terminal_cost_evolution(
     pwqnn = nn2function(PwqNN(Env.ns, PWQNN_HIDDEN), prefix="pwqnn")
     weight_names = pwqnn.name_in()[1:]
 
-    _, ax_nrmse = plt.subplots(1, 1, constrained_layout=True)
+    ncols = int(np.round(np.sqrt(len(data))))
+    nrows = int(np.ceil(len(data) / ncols))
+    fig = plt.figure(constrained_layout=True)
+    gs = GridSpec(nrows, nrows + ncols, fig)
+    ax_nrmse = fig.add_subplot(gs[:, :nrows])
     ax_r_squared = ax_nrmse.twinx()
+    axs_logres = [
+        fig.add_subplot(gs[i // ncols, i % ncols + nrows], projection="3d")
+        for i in range(nrows * ncols)
+    ]
     r_sq_ls = (0, (5, 10))
-
+    ep2idxs, logresiduals = [], []
     for i, (arg, tcosts, datum) in enumerate(zip(args, terminal_cost_components, data)):
         if "pwqnn" not in tcosts:
             continue
@@ -338,9 +347,10 @@ def plot_terminal_cost_evolution(
 
         # compute NRMSE and R^2
         V_true = value_func_data["V"]
+        p2p = np.nanmax(V_true) - np.nanmin(V_true) + 1e-27
         residuals = np.square(V - V_true)
         rmse = np.sqrt(np.nanmean(residuals, (2, 3)))
-        nrmse = rmse / (np.nanmax(V_true) - np.nanmin(V_true))
+        nrmse = rmse / p2p
         ss_total = np.nansum(np.square(V_true - np.nanmean(V_true)))
         ss_residual = np.nansum(residuals, (2, 3))
         r_squared = 1.0 - (ss_residual / ss_total)
@@ -350,11 +360,41 @@ def plot_terminal_cost_evolution(
         plot_population(ax_nrmse, episodes, nrmse, axis=0, color=c)
         plot_population(ax_r_squared, episodes, r_squared, axis=0, color=c, ls=r_sq_ls)
 
+        # store the log of the residuals averaged over agents for later plotting
+        ep2idxs.append(ep2idx)
+        logresiduals.append(np.log(np.nanmean(residuals / np.square(p2p), 0) + 1e-27))
+
+    # plot log of the residuals in a second loop
+    cmap = plt.get_cmap("RdBu_r")
+    range_ = np.linspace(0, 1, cmap.N)  # np.geomspace(1, 10, cmap.N) / 10.0
+    colors = cmap(range_)
+    colors[..., -1] = range_  # overwrite alphas
+    transpcmap = LinearSegmentedColormap.from_list("transp_RdBu_r", colors, cmap.N)
+    kw3d = {
+        "cmap": transpcmap,
+        "antialiased": True,
+        "zdir": "z",
+        "vmin": np.nanmin(logresiduals),
+        "vmax": np.nanmax(logresiduals),
+    }
+    for ax_logres, ep2idx, logresidual in zip(axs_logres, ep2idxs, logresiduals):
+        for ep, idx in ep2idx.items():
+            ax_logres.contourf(*X, logresidual[idx], offset=ep, **kw3d)
+
     ax_nrmse.set_xlabel("Update")
     ax_nrmse.set_ylabel(r"$NRMSE$")
     ax_r_squared.set_ylabel(r"$R^2$")
     ax_nrmse.spines.right.set_visible(False)
     ax_r_squared.spines.right.set_linestyle(r_sq_ls)
+
+    for ax_logres, arg in zip(axs_logres, args):
+        ax_logres.set_xlabel("$x_1$")
+        ax_logres.set_ylabel("$x_2$")
+        ax_logres.set_zlabel("Episode")
+        ax_logres.set_xlim(-Env.x_soft_bound, Env.x_soft_bound)
+        ax_logres.set_ylim(-Env.x_soft_bound, Env.x_soft_bound)
+        ax_logres.set_zlim(0, arg["n_episodes"] + 1)
+        ax_logres.invert_zaxis()
 
 
 if __name__ == "__main__":
