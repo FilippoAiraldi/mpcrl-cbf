@@ -1,6 +1,7 @@
 import argparse
 import sys
 from collections.abc import Collection
+from multiprocessing import cpu_count
 from pathlib import Path
 from typing import Any
 
@@ -280,6 +281,7 @@ def plot_terminal_cost_evolution(
 
     _, ax_nrmse = plt.subplots(1, 1, constrained_layout=True)
     ax_r_squared = ax_nrmse.twinx()
+    r_sq_ls = (0, (5, 10))
 
     for i, (arg, tcosts, datum) in enumerate(zip(args, terminal_cost_components, data)):
         if "pwqnn" not in tcosts:
@@ -310,8 +312,12 @@ def plot_terminal_cost_evolution(
         if "dlqr" in tcosts:
             V += (X.transpose(1, 2, 0).dot(P) * X.transpose(1, 2, 0)).sum(-1)
         if "pwqnn" in tcosts:
-            n_jobs = 8
-            partitions = np.array_split(list(np.ndindex((n_agents, n_ep))), n_jobs)
+            tot_ep_to_plot = 20
+            n_jobs = cpu_count() // 4
+            episodes = np.linspace(0, n_ep - 1, tot_ep_to_plot, dtype=int)
+            ep2idx = dict(map(reversed, enumerate(episodes)))
+            indices = filter(lambda ae: ae[1] in ep2idx, np.ndindex((n_agents, n_ep)))
+            partitions = np.array_split(list(indices), n_jobs)
 
             def func(partition):
                 n_elem = partition.shape[0]
@@ -319,13 +325,14 @@ def plot_terminal_cost_evolution(
                 for i in range(n_elem):
                     agent, ep = partition[i]
                     w = {n: params_history[n][agent, ep] for n in weight_names}
+                    partition[i] = agent, ep2idx[ep]
                     V_[i] = pwqnn(x=Xf, **w)["y"].toarray().reshape(N, N)
                 return partition, V_
 
             data = Parallel(n_jobs=n_jobs, return_as="generator_unordered")(
                 delayed(func)(p) for p in partitions
             )
-            V = np.empty((n_agents, n_ep, N, N))
+            V = np.empty((n_agents, len(episodes), N, N))
             for partition, V_ in data:
                 V[partition[:, 0], partition[:, 1]] = V_
 
@@ -339,13 +346,15 @@ def plot_terminal_cost_evolution(
         r_squared = 1.0 - (ss_residual / ss_total)
 
         c = f"C{i}"
-        episodes = np.arange(n_ep)
+        episodes = np.sort(list(episodes))
         plot_population(ax_nrmse, episodes, nrmse, axis=0, color=c)
-        plot_population(ax_r_squared, episodes, r_squared, axis=0, color=c, ls="-.")
+        plot_population(ax_r_squared, episodes, r_squared, axis=0, color=c, ls=r_sq_ls)
 
     ax_nrmse.set_xlabel("Update")
     ax_nrmse.set_ylabel(r"$NRMSE$")
     ax_r_squared.set_ylabel(r"$R^2$")
+    ax_nrmse.spines.right.set_visible(False)
+    ax_r_squared.spines.right.set_linestyle(r_sq_ls)
 
 
 if __name__ == "__main__":
@@ -359,7 +368,44 @@ if __name__ == "__main__":
         nargs="+",
         help="Filenames of the results on disk to load and plot.",
     )
+    parser.add_argument(
+        "--state-action",
+        action="store_true",
+        help="Plots the state and action trajectories.",
+    )
+    parser.add_argument(
+        "--returns",
+        action="store_true",
+        help="Plots the returns across episodes.",
+    )
+    parser.add_argument(
+        "--solver-time",
+        action="store_true",
+        help="Plots the recorded solver time.",
+    )
+    parser.add_argument(
+        "--training",
+        action="store_true",
+        help="Plots the evolution of the training process.",
+    )
+    parser.add_argument(
+        "--terminal-cost",
+        action="store_true",
+        help="Plots the evolution of the terminal cost approximation.",
+    )
+    parser.add_argument("--all", action="store_true", help="Plots all visualizations.")
     args = parser.parse_args()
+    if not any(
+        (
+            args.state_action,
+            args.returns,
+            args.solver_time,
+            args.training,
+            args.terminal_cost,
+            args.all,
+        )
+    ):
+        parser.error("No type of visualizations selected.")
 
     sim_args = []
     data = []
@@ -373,9 +419,18 @@ if __name__ == "__main__":
         data.append(datum)
         print(filename.upper(), f"Args: {sim_arg}\n", sep="\n")
 
-    plot_states_and_actions(data, unique_names)
-    plot_returns(data, unique_names)
-    plot_solver_times(data, unique_names)
-    plot_training(data, unique_names)
-    plot_terminal_cost_evolution(data, sim_args)
+    if args.all or args.state_action:
+        plot_states_and_actions(data, unique_names)
+    if args.all or args.returns:
+        plot_returns(data, unique_names)
+    if args.all or args.solver_time:
+        plot_solver_times(data, unique_names)
+    if args.all or args.training:
+        plot_training(data, unique_names)
+    if args.all or args.terminal_cost:
+        from time import perf_counter
+
+        t0 = perf_counter()
+        plot_terminal_cost_evolution(data, sim_args)
+        print(f"Time to plot terminal cost evolution: {perf_counter() - t0:.6f}s")
     plt.show()
