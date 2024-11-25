@@ -27,6 +27,7 @@ class ConstrainedLtiEnvLstdQLearningAgent(LstdQLearningAgent[cs.MX, float]):
         super().__init__(mpc, *args, **kwargs)
         self._scenarios = mpc.n_scenarios
         self._horizon = mpc.prediction_horizon
+        self._dist_names = [f"w__{i}" for i in range(self._scenarios)]
 
     def train(self, env: Env, *args: Any, **kwargs: Any):
         assert env.unwrapped.nd == 1, "only one disturbance is supported!"
@@ -35,28 +36,27 @@ class ConstrainedLtiEnvLstdQLearningAgent(LstdQLearningAgent[cs.MX, float]):
     def on_episode_start(self, env: Env, episode: int, state: np.ndarray) -> None:
         super().on_episode_start(env, episode, state)
         self._sample_disturbances(env)
-        self._shift_disturbances(0)
+        self._shift_disturbances(False)
 
     def on_timestep_end(self, env: Env, episode: int, timestep: int) -> None:
         super().on_timestep_end(env, episode, timestep)
         self._sample_disturbances(env)
-        self._shift_disturbances(0)
+        self._shift_disturbances(False)
 
     def on_env_step(self, env: Env, episode: int, timestep: int) -> None:
         super().on_env_step(env, episode, timestep)
-        self._shift_disturbances(1)
+        self._shift_disturbances(True)
 
     def _sample_disturbances(self, env: Env) -> None:
         """Draws the disturbance samples for the time step."""
-        self._disturbances = env.unwrapped.sample_disturbance_profiles(self._scenarios)
+        self._disturbances = env.unwrapped.sample_disturbance_profiles(
+            self._scenarios, self._horizon + 1
+        )
 
-    def _shift_disturbances(self, shift: int) -> None:
+    def _shift_disturbances(self, shift: bool) -> None:
         """Updates the disturbance estimates."""
-        dist = self._disturbances
-        h = self._horizon
-        pars = self.fixed_parameters
-        for i in range(self._scenarios):
-            pars[f"w__{i}"] = dist[i, shift : h + shift]
+        dist = self._disturbances[:, 1:] if shift else self._disturbances[:, :-1]
+        self.fixed_parameters.update(zip(self._dist_names, dist))
 
 
 def get_lstd_qlearning_agent(
