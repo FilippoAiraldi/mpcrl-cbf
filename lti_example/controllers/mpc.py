@@ -72,7 +72,7 @@ def create_mpc(
     mpc = Mpc(Nlp("MX"), horizon, shooting="single")
     _, x0 = mpc.state("x", ns)
     u, _ = mpc.action("u", na, lb=-a_bnd, ub=a_bnd)
-    mpc.set_linear_dynamics(A, B)
+    mpc.set_affine_dynamics(A, B)
     x = mpc.states["x"]
 
     # set state constraints (the same for stage and terminal) - the initial constraint

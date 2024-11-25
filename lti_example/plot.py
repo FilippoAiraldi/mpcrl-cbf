@@ -4,6 +4,7 @@ from collections.abc import Collection
 from multiprocessing import cpu_count
 from pathlib import Path
 from typing import Any
+from warnings import warn
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -466,7 +467,7 @@ if __name__ == "__main__":
             args.all,
         )
     ):
-        parser.error("No type of visualizations selected.")
+        warn("No type of visualizations selected.", RuntimeWarning)
 
     sim_args = []
     data = []

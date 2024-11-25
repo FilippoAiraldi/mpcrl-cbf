@@ -1,3 +1,6 @@
+"""Computes and plot and/or save to disk the optimal infinite-horizon value function and
+policy for the constrained LTI environment."""
+
 import sys
 from pathlib import Path
 import argparse
