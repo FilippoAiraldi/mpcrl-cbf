@@ -24,13 +24,13 @@ from util.wrappers import RecordSolverTime, SuppressOutput
 
 
 def get_agent(
-    algorithm: Literal["lstd-ql"], *args: Any, **kwargs: Any
+    algorithm: Literal["lstd-ql", "lstd-dpg"], *args: Any, **kwargs: Any
 ) -> RlLearningAgent:
     """Returns the agent given its algorithm.
 
     Parameters
     ----------
-    algorithm : {"lstd-ql"}
+    algorithm : {"lstd-ql", "lstd-dpg"}
         The agent's algorithm to construct.
     args, kwargs
         The arguments to pass to the agent constructor.
@@ -47,13 +47,15 @@ def get_agent(
     """
     if algorithm == "lstd-ql":
         from agents.lstd_ql import get_lstd_qlearning_agent as func
+    elif algorithm == "lstd-dpg":
+        from agents.lstd_dpg import get_lstd_dpg_agent as func
     else:
         raise ValueError(f"Unknown agent: {algorithm}")
     return func(*args, **kwargs)
 
 
 def train_one_agent(
-    algorithm: Literal["lstd-ql"],
+    algorithm: Literal["lstd-ql", "lstd-dpg"],
     scmpc_kwargs: dict[str, Any],
     learning_rate: float,
     exploration_epsilon: tuple[float, float],
@@ -75,7 +77,7 @@ def train_one_agent(
 
     Parameters
     ----------
-    algorithm : {"lstd-ql"}
+    algorithm : {"lstd-ql", "lstd-dpg"}
         The algorithm to use for training the RL agent.
     scmpc_kwargs : dict
         The arguments to pass to the controller instantiation.
@@ -155,17 +157,22 @@ def train_one_agent(
     # extract and return the data from the environment and the agent
     U = np.asarray(env.actions).squeeze(-1)
     X = np.asarray(env.observations)
-    sol_times = np.stack(
-        (
-            np.reshape(agent.V.solver_time, (n_episodes, timesteps + 1))[:, 1:],
-            np.reshape(agent.Q.solver_time, (n_episodes, timesteps)),
-        ),
-        axis=-1,
-    )
     updates_history = {n: np.asarray(par) for n, par in agent.updates_history.items()}
     others = []
     if algorithm == "lstd-ql":
+        sol_times = np.stack(
+            (
+                np.reshape(agent.V.solver_time, (n_episodes, timesteps + 1))[:, 1:],
+                np.reshape(agent.Q.solver_time, (n_episodes, timesteps)),
+            ),
+            axis=-1,
+        )
         others.append(np.reshape(agent.td_errors, (n_episodes, timesteps)))
+    elif algorithm == "lstd-dpg":
+        sol_times = np.reshape(agent.V.solver_time, (n_episodes, timesteps))
+        others.append(
+            np.reshape(agent.policy_gradients, (n_episodes, learnable_pars.size)),
+        )
     return R, U, X, sol_times, updates_history, *others
 
 
@@ -179,7 +186,7 @@ if __name__ == "__main__":
     group = parser.add_argument_group("Choice of RL algorithm")
     group.add_argument(
         "algorithm",
-        choices=("lstd-ql",),
+        choices=("lstd-ql", "lstd-dpg"),
         help="The algorithm to use for training the RL agents.",
     )
     group = parser.add_argument_group("RL algorithm options")
@@ -314,6 +321,8 @@ if __name__ == "__main__":
     keys = ["cost", "actions", "states", "sol_times", "updates_history"]
     if algo == "lstd-ql":
         keys.append("td_errors")
+    elif algo == "lstd-dpg":
+        keys.append("policy_gradients")
     data_dict = dict(zip(keys, map(np.asarray, zip(*data))))
     par_names = data_dict["updates_history"][0].keys()
     data_dict["updates_history"] = {

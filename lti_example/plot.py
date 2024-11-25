@@ -191,24 +191,32 @@ def plot_training(
     ----------
     data : collection of dictionaries (str, arrays)
         The dictionaries from different simulations, each potentially containing the
-        keys `"updates_history"` and `"td_errors"`.
+        keys `"updates_history"`, `"td_errors"`, or `"policy_performances"`.
     """
     param_names = set()
     for datum in data:
         if "updates_history" in datum:
             param_names.update(datum["updates_history"].keys())
-    any_td_errors = any("td_errors" in d for d in data)
+    any_td = any("td_errors" in d for d in data)
+    any_pg = any("policy_gradients" in d for d in data)
+    any_other = any_td or any_pg
     n = len(param_names)
-    if n == 0 and not any_td_errors:
+    if n == 0 and not any_other:
         return
 
     fig = plt.figure(constrained_layout=True)
     ncols = int(np.round(np.sqrt(n)))
     nrows = int(np.ceil(n / ncols))
-    gs = GridSpec(nrows + int(any_td_errors), ncols, fig)
-    if any_td_errors:
-        ax_td = fig.add_subplot(gs[0, :])
+    gs = GridSpec(nrows + int(any_other), ncols, fig)
+    if any_other:
         offset = 1
+        if any_td and any_pg:
+            ax_td = fig.add_subplot(gs[0, :])
+            ax_pg = ax_td.twinx()
+        elif any_td:
+            ax_td = fig.add_subplot(gs[0, :])
+        else:
+            ax_pg = fig.add_subplot(gs[0, :])
     else:
         offset = 0
     param_names = sorted(param_names)
@@ -228,6 +236,12 @@ def plot_training(
             td_errors = np.abs(td_errors).sum(2)
             episodes = np.arange(td_errors.shape[1])
             plot_population(ax_td, episodes, td_errors, axis=0, color=c)
+        elif "policy_gradients" in datum:
+            n_ep = datum["cost"].shape[1]
+            grads = datum["policy_gradients"]  # n_agents x n_up x n_pars
+            norms = np.linalg.norm(grads, axis=2)
+            updates = np.linspace(0, n_ep - 1, grads.shape[1])
+            plot_population(ax_pg, updates, norms, axis=0, color=c, log=True)
 
         if "updates_history" in datum:
             for name, param in datum["updates_history"].items():
@@ -241,9 +255,12 @@ def plot_training(
                         ax, updates, param[..., idx], axis=0, color=c, alpha=alpha
                     )
 
-    if any_td_errors:
+    if any_td:
         ax_td.set_xlabel("Episode")
         ax_td.set_ylabel(r"$\sum{|\delta|}$")
+    if any_pg:
+        ax_pg.set_xlabel("Episode")
+        ax_pg.set_ylabel(r"$\| \nabla_\theta J(\pi_\theta) \|_2$")
     for name, ax in ax_pars.items():
         ax.set_xlabel("Episode")
         ax.set_ylabel(name)
