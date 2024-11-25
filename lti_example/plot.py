@@ -19,7 +19,6 @@ from mpcrl.util.control import dlqr
 lti_dir = Path(__file__).parent
 sys.path.append(str(lti_dir.parent))
 
-from controllers.config import PWQNN_HIDDEN
 from env import ConstrainedLtiEnv as Env
 
 from util.nn import nn2function
@@ -273,12 +272,10 @@ def plot_terminal_cost_evolution(
     if not any("pwqnn" in cmp for cmp in terminal_cost_components):
         return
 
+    _, P = dlqr(Env.A, Env.B, Env.Q, Env.R)
     value_func_dir = lti_dir / "value_func"
     value_func_cache = {}
-
-    _, P = dlqr(Env.A, Env.B, Env.Q, Env.R)
-    pwqnn = nn2function(PwqNN(Env.ns, PWQNN_HIDDEN), prefix="pwqnn")
-    weight_names = pwqnn.name_in()[1:]
+    pwqnn_cache = {}
 
     ncols = int(np.round(np.sqrt(len(data))))
     nrows = int(np.ceil(len(data) / ncols))
@@ -321,6 +318,13 @@ def plot_terminal_cost_evolution(
         if "dlqr" in tcosts:
             V += (X.transpose(1, 2, 0).dot(P) * X.transpose(1, 2, 0)).sum(-1)
         if "pwqnn" in tcosts:
+            hidden_features = params_history["pwqnn.input_layer.weight"].shape[2]
+            if hidden_features in pwqnn_cache:
+                pwqnn = pwqnn_cache[hidden_features]
+            else:
+                pwqnn = nn2function(PwqNN(Env.ns, hidden_features), prefix="pwqnn")
+                pwqnn_cache[hidden_features] = pwqnn
+
             tot_ep_to_plot = 20
             n_jobs = cpu_count() // 4
             episodes = np.linspace(0, n_ep - 1, tot_ep_to_plot, dtype=int)
@@ -333,7 +337,7 @@ def plot_terminal_cost_evolution(
                 V_ = np.empty((n_elem, N, N))
                 for i in range(n_elem):
                     agent, ep = partition[i]
-                    w = {n: params_history[n][agent, ep] for n in weight_names}
+                    w = {n: params_history[n][agent, ep] for n in pwqnn.name_in()[1:]}
                     partition[i] = agent, ep2idx[ep]
                     V_[i] = pwqnn(x=Xf, **w)["y"].toarray().reshape(N, N)
                 return partition, V_
