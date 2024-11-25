@@ -17,12 +17,13 @@ from env import ConstrainedLtiEnv as Env
 from controllers.mpc import create_mpc
 
 
-def compute_value_func_on_partition(
+def compute_value_func_and_policy_on_partition(
     partition: npt.NDArray[np.int_],
     xs: npt.NDArray[np.floating],
     mpc_kwargs: dict[str, Any],
-) -> tuple[npt.NDArray[np.int_], npt.NDArray[np.floating]]:
-    """Computes the value function only on the given partition of the grid.
+) -> tuple[npt.NDArray[np.int_], npt.NDArray[np.floating], npt.NDArray[np.floating]]:
+    """Computes the value function and optimal policy only on the given partition of the
+    grid.
 
     Parameters
     ----------
@@ -35,28 +36,35 @@ def compute_value_func_on_partition(
 
     Returns
     -------
-    tuple of array and array
-        Returns the partition itself and the value function evaluated at the partition.
+    tuple of arrays
+        Returns the partition itself and the value function and policy evaluated at the
+        partition.
     """
     mpc, _ = create_mpc(**mpc_kwargs)
     N = partition.shape[0]
     vs = np.empty(N)
+    us = np.empty((N, mpc.na))
     for k in range(N):
         i, j = partition[k]
         sol = mpc.solve(pars={"x_0": xs[:, i, j]})
-        vs[k] = np.nan if sol.infeasible or not sol.success else sol.f
-    return partition, vs
+        if sol.infeasible or not sol.success:
+            vs[k] = us[k] = np.nan
+        else:
+            vs[k] = sol.f
+            us[k] = sol.vals["u"][:, 0].toarray().flatten()
+    return partition, vs, us
 
 
-def compute_value_func(
+def compute_value_func_and_policy(
     horizon: int,
     dcbf: bool,
     soft: bool,
     grid_side: int,
     n_jobs: int,
 ) -> tuple[npt.NDArray[np.floating], npt.NDArray[np.floating]]:
-    """Computes the value function for the constrained LTI environment as the solution
-    to the corresponding MPC problem (with a sufficiently long horizon)
+    """Computes the value function and optimal policy for the constrained LTI
+    environment as the solution to the corresponding MPC problem (with a sufficiently
+    long horizon)
 
     Parameters
     ----------
@@ -73,9 +81,9 @@ def compute_value_func(
 
     Returns
     -------
-    two arrays
-        Returns a 1d array with the grid points and a 2d array with the value function
-        evaluated at the grid points (after creation of a meshgrid).
+    tuple of arrays
+        Returns a 1d array with the grid points, and two 2d arrays with the value
+        function and policy evaluated at the grid points (after creation of a meshgrid).
     """
     # prepare the grid
     grid = np.linspace(-Env.x_soft_bound, Env.x_soft_bound, grid_side)
@@ -95,15 +103,17 @@ def compute_value_func(
         "terminal_cost": set(),
     }
     data = Parallel(n_jobs=n_jobs, verbose=10, return_as="generator_unordered")(
-        delayed(compute_value_func_on_partition)(partition, X, mpc_kwargs)
+        delayed(compute_value_func_and_policy_on_partition)(partition, X, mpc_kwargs)
         for partition in partitions
     )
 
     # gather the results
     V = np.empty((grid_side, grid_side))
-    for partition, vs in data:
+    U = np.empty((grid_side, grid_side, Env.na))
+    for partition, vs, us in data:
         V[partition[:, 0], partition[:, 1]] = vs
-    return grid, V
+        U[partition[:, 0], partition[:, 1]] = us
+    return grid, V, U
 
 
 if __name__ == "__main__":
@@ -157,33 +167,43 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # compute the value function
-    grid_points, V = compute_value_func(
+    grid_points, V, U = compute_value_func_and_policy(
         args.horizon, args.dcbf, args.soft, args.grid_side, args.n_jobs
     )
 
     # save and plot
     if args.save:
-        np.savez_compressed(args.save, grid=grid_points, V=V)
+        np.savez_compressed(args.save, grid=grid_points, V=V, U=U)
     if args.plot or not args.save:
         import matplotlib.pyplot as plt
         from matplotlib.ticker import LogLocator, FuncFormatter, MaxNLocator
 
-        X, Y = np.meshgrid(grid_points, grid_points)
-        kwargs = {"vmin": np.nanmin(V), "vmax": np.nanmax(V), "cmap": "RdBu_r"}
+        X1, X2 = np.meshgrid(grid_points, grid_points)
 
-        fig = plt.figure(figsize=(10, 5), constrained_layout=True)
-        ax1 = fig.add_subplot(1, 2, 1)
-        ax2 = fig.add_subplot(1, 2, 2, projection="3d")
-        CS = ax1.contourf(X, Y, V, locator=LogLocator(subs="auto"), **kwargs)
+        fig = plt.figure(figsize=(7, 7), constrained_layout=True)
+        ax1 = fig.add_subplot(2, 2, 1)
+        ax2 = fig.add_subplot(2, 2, 2, projection="3d")
+        ax3 = fig.add_subplot(2, 2, 3, projection="3d")
+        ax4 = fig.add_subplot(2, 2, 4, projection="3d")
+
+        kwargs = {"vmin": np.nanmin(V), "vmax": np.nanmax(V), "cmap": "RdBu_r"}
+        CS = ax1.contourf(X1, X2, V, locator=LogLocator(subs="auto"), **kwargs)
         # ax1.clabel(CS, CS.levels[::10], inline=True, fontsize=10, colors='k')
         if args.log_scale:
             kwargs["vmin"] = np.log10(kwargs["vmin"])
             kwargs["vmax"] = np.log10(kwargs["vmax"])
             V = np.log10(V)
-        SF = ax2.plot_surface(X, Y, V, **kwargs)
+        ax2.plot_surface(X1, X2, V, **kwargs)
 
+        kwargs.update({"vmin": -Env.a_bound, "vmax": Env.a_bound})
+        ax3.plot_surface(X1, X2, U[..., 0], **kwargs)
+        ax4.plot_surface(X1, X2, U[..., 1], **kwargs)
+
+        ax1.set_title("Value function (top)")
         ax1.set_xlabel("$x_1$")
         ax1.set_ylabel("$x_2$")
+        ax1.set_aspect("equal", adjustable="box")
+        ax2.set_title("Value function")
         ax2.set_xlabel("$x_1$")
         ax2.set_ylabel("$x_2$")
         ax2.set_zlabel("$V(x)$")
@@ -193,4 +213,12 @@ if __name__ == "__main__":
                 FuncFormatter(lambda val, _: f"$10^{{{int(val)}}}$")
             )
             ax2.zaxis.set_major_locator(MaxNLocator(integer=True))
+        ax3.set_title("Policy (1)")
+        ax3.set_xlabel("$x_1$")
+        ax3.set_ylabel("$x_2$")
+        ax3.set_zlabel("$u_1$")
+        ax4.set_title("Policy (2)")
+        ax4.set_xlabel("$x_1$")
+        ax4.set_ylabel("$x_2$")
+        ax4.set_zlabel("$u_2$")
         plt.show()
