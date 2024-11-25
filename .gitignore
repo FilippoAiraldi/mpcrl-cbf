@@ -139,5 +139,5 @@ libpardiso.lib
 pardiso.lic
 tmp_casadi_compiler*.o
 tmp_casadi_compiler*.so
-lti_example/value_func/matlab/*
+lti_example/explicit_sol/matlab/*
 nlp_hess_l.casadi

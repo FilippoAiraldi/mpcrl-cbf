@@ -1,2 +1,2 @@
 [tool.black]
-extend-exclude = "lti_example/value_func/matlab/*"
+extend-exclude = "lti_example/explicit_sol/matlab/*"

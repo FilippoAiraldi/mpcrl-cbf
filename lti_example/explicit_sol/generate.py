@@ -1,9 +1,9 @@
 """Computes and plot and/or save to disk the optimal infinite-horizon value function and
 policy for the constrained LTI environment."""
 
+import argparse
 import sys
 from pathlib import Path
-import argparse
 from typing import Any
 
 import numpy as np
@@ -13,8 +13,8 @@ from joblib import Parallel, delayed
 lti_example_dir = Path(__file__).parent.parent
 sys.path.extend((str(lti_example_dir.parent), str(lti_example_dir)))
 
-from env import ConstrainedLtiEnv as Env
 from controllers.mpc import create_mpc
+from env import ConstrainedLtiEnv as Env
 
 
 def compute_value_func_and_policy_on_partition(
@@ -176,7 +176,7 @@ if __name__ == "__main__":
         np.savez_compressed(args.save, grid=grid_points, V=V, U=U)
     if args.plot or not args.save:
         import matplotlib.pyplot as plt
-        from matplotlib.ticker import LogLocator, FuncFormatter, MaxNLocator
+        from matplotlib.ticker import FuncFormatter, LogLocator, MaxNLocator
 
         X1, X2 = np.meshgrid(grid_points, grid_points)
 
