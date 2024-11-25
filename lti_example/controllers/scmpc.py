@@ -77,7 +77,7 @@ def create_scmpc(
     x, _, x0 = scmpc.state("x", ns)
     u, _ = scmpc.action("u", na, lb=-a_bnd, ub=a_bnd)
     scmpc.disturbance("w", nd)
-    scmpc.set_linear_dynamics(A, B, D)
+    scmpc.set_affine_dynamics(A, B, D)
 
     # set state constraints (the same for stage and terminal) - the initial constraint
     # is needed to penalize the current state in RL, but can be removed in other cases
