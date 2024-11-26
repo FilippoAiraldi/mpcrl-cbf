@@ -114,7 +114,7 @@ def train_one_agent(
 
     # create the SCMPC controller
     set_sym_type("MX")
-    scmpc, pwqnn = create_scmpc(**scmpc_kwargs, env=env, parametric=True)
+    scmpc, pwqnn = create_scmpc(**scmpc_kwargs, env=env)
     scmpc = RecordSolverTime(scmpc)
     if scmpc.unwrapped._solver_plugin == "qpoases":
         scmpc = SuppressOutput(scmpc)

@@ -46,7 +46,7 @@ def compute_value_func_and_policy_on_partition(
     us = np.empty((N, mpc.na))
     for k in range(N):
         i, j = partition[k]
-        sol = mpc.solve(pars={"x_0": xs[:, i, j]})
+        sol = mpc.solve(pars={"x_0": [xs[j], xs[i]]})
         if sol.infeasible or not sol.success:
             vs[k] = us[k] = np.nan
         else:
@@ -87,13 +87,12 @@ def compute_value_func_and_policy(
     """
     # prepare the grid
     grid = np.linspace(-Env.x_soft_bound, Env.x_soft_bound, grid_side)
-    X = np.asarray(np.meshgrid(grid, grid))
 
     # divide the X domain into partitions for each parallel process
     n_jobs = max(n_jobs, 1)
-    partitions = np.array_split(list(np.ndindex(X.shape[1:])), n_jobs)
+    partitions = np.array_split(list(np.ndindex((grid_side, grid_side))), n_jobs)
 
-    # compute the value function in parallel
+    # compute the value function and policy in parallel
     mpc_kwargs = {
         "horizon": horizon,
         "dcbf": dcbf,
@@ -103,7 +102,7 @@ def compute_value_func_and_policy(
         "terminal_cost": set(),
     }
     data = Parallel(n_jobs=n_jobs, verbose=10, return_as="generator_unordered")(
-        delayed(compute_value_func_and_policy_on_partition)(partition, X, mpc_kwargs)
+        delayed(compute_value_func_and_policy_on_partition)(partition, grid, mpc_kwargs)
         for partition in partitions
     )
 
