@@ -1,6 +1,7 @@
 import argparse
 import sys
 from collections.abc import Collection
+from itertools import repeat
 from multiprocessing import cpu_count
 from pathlib import Path
 from typing import Any
@@ -271,6 +272,7 @@ def plot_training(
 def plot_terminal_cost_evolution(
     data: Collection[dict[str, npt.NDArray[np.floating]]],
     args: Collection[dict[str, Any]],
+    names: Collection[str] | None = None,
     *_: Any,
     **__: Any,
 ) -> None:
@@ -285,6 +287,8 @@ def plot_terminal_cost_evolution(
         key `"updates_history"`.
     args : collection of dictionaries (str, Any)
         The arguments used to run the simulation scripts.
+    names : collection of str, optional
+        The names of the simulations to use in the plot.
     """
     terminal_cost_components = [arg.get("terminal_cost", set()) for arg in args]
     if not any("pwqnn" in cmp for cmp in terminal_cost_components):
@@ -303,7 +307,7 @@ def plot_terminal_cost_evolution(
     ax_r_squared = ax_nrmse.twinx()
     axs_logres = [
         fig.add_subplot(gs[i // ncols, i % ncols + nrows], projection="3d")
-        for i in range(nrows * ncols)
+        for i in range(len(data))
     ]
     r_sq_ls = (0, (5, 10))
     ep2idxs, logresiduals = [], []
@@ -409,10 +413,14 @@ def plot_terminal_cost_evolution(
     ax_nrmse.spines.right.set_visible(False)
     ax_r_squared.spines.right.set_linestyle(r_sq_ls)
 
-    for ax_logres, arg in zip(axs_logres, args):
+    if names is None:
+        names = repeat(None)
+    for ax_logres, arg, name in zip(axs_logres, args, names):
         ax_logres.set_xlabel("$x_1$")
         ax_logres.set_ylabel("$x_2$")
         ax_logres.set_zlabel("Episode")
+        if name is not None:
+            ax_logres.set_title(name)
         ax_logres.set_xlim(-Env.x_soft_bound, Env.x_soft_bound)
         ax_logres.set_ylim(-Env.x_soft_bound, Env.x_soft_bound)
         ax_logres.set_zlim(0, arg["n_episodes"] + 1)
@@ -490,9 +498,5 @@ if __name__ == "__main__":
     if args.all or args.training:
         plot_training(data, unique_names)
     if args.all or args.terminal_cost:
-        from time import perf_counter
-
-        t0 = perf_counter()
-        plot_terminal_cost_evolution(data, sim_args)
-        print(f"Time to plot terminal cost evolution: {perf_counter() - t0:.6f}s")
+        plot_terminal_cost_evolution(data, sim_args, unique_names)
     plt.show()
