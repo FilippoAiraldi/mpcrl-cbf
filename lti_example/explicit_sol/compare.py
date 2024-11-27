@@ -1,41 +1,90 @@
-"""Compares the learned control policy (intended as the result of a training process)
-with the optimal control policy for the explicit constrained LTI system."""
+"""Compares the learned value function and control policy (intended as the result of a
+training process) with the optimal explicit value function and control policy for the
+constrained LTI system."""
 
-import os
 import sys
-from argparse import ArgumentDefaultsHelpFormatter, ArgumentError, ArgumentParser
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+from pathlib import Path
 from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
 from csnlp.util.io import load
+from csnn.convex import PwqNN
 from joblib import Parallel, delayed
+from matplotlib import cm, colors
+from mpcrl.util.control import dlqr
 
-lti_dir = os.path.dirname(os.path.dirname(__file__))
-sys.path.extend((lti_dir, os.path.dirname(lti_dir)))
+explicit_sol_dir = Path(__file__).parent
+lti_example_dir = explicit_sol_dir.parent
+sys.path.extend((str(lti_example_dir.parent), str(lti_example_dir)))
 
 from controllers.mpc import create_mpc
 from env import ConstrainedLtiEnv as Env
 
+from util.nn import nn2function
 
-def load_precomputed_policy(
-    filename: str,
-) -> tuple[npt.NDArray[np.floating], npt.NDArray[np.floating]]:
-    """Loads the pre-comptued policy from a NumPy file.
+
+def load_explicit(dcbf: bool, soft: bool) -> tuple[npt.NDArray[np.floating], ...]:
+    """Loads the pre-computed explicit solution from a NumPy file.
 
     Parameters
     ----------
-    filename : str
-        The filename of the policy to load.
+    dcbf : bool
+        Whether the policy was computed with DCBF constraints.
+    soft : bool
+        Whether the policy was computed with soft constraints.
 
     Returns
     -------
-    tuple of 2 arrays
-        The grid and the control policy.
+    tuple of 3 arrays
+        The grid, optimal value function and optimal control policy over the grid.
     """
+    filename = str(explicit_sol_dir / "data")
+    if dcbf:
+        filename += "_dcbf"
+    if soft:
+        filename += "_soft"
+    filename += ".npz"
     data = np.load(filename)
-    return data["grid"], data["U"]
+    return data["grid"], data["V"], data["U"]
+
+
+def compute_learned_value_function(
+    grid: npt.NDArray[np.floating],
+    args: dict[str, Any],
+    mpc_pars: dict[str, npt.NDArray[np.floating]],
+) -> npt.NDArray[np.floating]:
+    """Computes the learned value function over the given grid.
+
+    Parameters
+    ----------
+    grid : array
+        1D array of grid points.
+    args : dict of any
+        The arguments used for the simulation.
+    mpc_pars : dict of arrays
+        The NN weights for the MPC controller.
+
+    Returns
+    -------
+    array
+        The learned value function for each point of the 2D grid.
+    """
+    N = grid.size
+    X = np.asarray(np.meshgrid(grid, grid)).reshape(Env.ns, -1)
+    V = np.zeros((N, N))
+    tc_components = args.get("terminal_cost", set())
+
+    if "dlqr" in tc_components:
+        _, P = dlqr(Env.A, Env.B, Env.Q, Env.R)
+        V += (X.transpose(1, 2, 0).dot(P) * X.transpose(1, 2, 0)).sum(-1)
+    if "pwqnn" in tc_components:
+        hidden_features = mpc_pars["pwqnn.input_layer.weight"].shape[0]
+        pwqnn = nn2function(PwqNN(Env.ns, hidden_features), prefix="pwqnn")
+        V += pwqnn(x=X, **mpc_pars)["y"].toarray().reshape(N, N)
+    return V
 
 
 def compute_policy_on_partition(
@@ -44,9 +93,28 @@ def compute_policy_on_partition(
     mpc_kwargs: dict[str, Any],
     mpc_pars: dict[str, npt.NDArray[np.floating]],
 ) -> tuple[npt.NDArray[np.int_], npt.NDArray[np.floating]]:
-    mpc, _ = create_mpc(**mpc_kwargs)
-    # TODO: set the parameters here
+    """_summary_
+
+    Parameters
+    ----------
+    partition : array of ints
+        The partition of the gridded state space to compute the policy on.
+    xs : array
+        The grid points of the state space.
+    mpc_kwargs : dict of any
+        Keywords arguments for the instantiation of the MPC controller.
+    mpc_pars : dict of arrays
+        The NN weights for the MPC controller.
+
+    Returns
+    -------
+    tuple of 2 arrays
+        Returns the partition and the computed control policy on that partition.
+    """
     N = partition.shape[0]
+    hidden_size = mpc_pars["pwqnn.input_layer.weight"].shape[0]
+    mpc, _ = create_mpc(**mpc_kwargs, hidden_size=hidden_size)
+
     us = np.empty((N, Env.na))
     for k in range(N):
         i, j = partition[k]
@@ -60,14 +128,30 @@ def compute_policy_on_partition(
     return partition, us
 
 
-def compute_policy(
-    filename: str, grid: npt.NDArray[np.floating], n_jobs: int
+def compute_learned_policy(
+    grid: npt.NDArray[np.floating],
+    args: dict[str, Any],
+    mpc_params: dict[str, npt.NDArray[np.floating]],
+    n_jobs: int,
 ) -> npt.NDArray[np.floating]:
-    # load the data from the file - we need the final parameters and the training args
-    data = load(filename)
-    args = data.pop("args")
-    mpc_params = {n: par[:, -1].mean(0) for n, par in data["updates_history"].items()}
+    """Computes the learning-based MPC policy for the given grid in parallel.
 
+    Parameters
+    ----------
+    grid : array
+        1D array of grid points.
+    args : dict of any
+        The arguments used for the simulation.
+    mpc_params : dict of arrays
+        The NN weights for the MPC controller.
+    n_jobs : int
+        Number of parallel processes.
+
+    Returns
+    -------
+    array
+        The learned control policy for each point of the 2D grid.
+    """
     # prepare the grid and divide it into partitions
     grid_side = grid.size
     partitions = np.array_split(list(np.ndindex((grid_side, grid_side))), n_jobs)
@@ -94,74 +178,99 @@ def compute_policy(
     return U
 
 
+def do_plot(data: list[tuple[npt.NDArray[np.floating], ...]], log: bool) -> None:
+    """Plots the comparison of the optimal infinite-horizon value function and policy
+    for the constrained LTI environment w.r.t. the learned ones.
+
+    Parameters
+    ----------
+    data : list of tuples of 3 arrays
+        The data to plot. Each tuple must contain the grid and the difference between
+        the optimal and learned value functions and policies.
+    log : bool
+        Whether to plot the value function in log scale.
+    """
+    vf_min = min(np.nanmin(delta) for _, delta, _ in data)
+    vf_max = max(np.nanmax(delta) for _, delta, _ in data)
+    pol_min = min(np.nanmin(delta) for _, _, delta in data)
+    pol_max = max(np.nanmax(delta) for _, _, delta in data)
+
+    fig, axs = plt.subplots(
+        len(data), 3, constrained_layout=True, sharex=True, sharey=True
+    )
+    axs = np.atleast_2d(axs)
+    cmap = "RdBu_r"
+    if not log:
+        vf_norm = colors.Normalize(vmin=vf_min, vmax=vf_max)
+    else:
+        vf_norm = colors.SymLogNorm(1.0, vmin=vf_min, vmax=vf_max)
+    pol_norm = colors.Normalize(vmin=pol_min, vmax=pol_max)
+    vf_kwargs = {"norm": vf_norm, "cmap": cmap}
+    pol_kwargs = {"norm": pol_norm, "cmap": cmap}
+
+    for i, (grid, vf_delta, pol_delta) in enumerate(data):
+        ax1, ax2, ax3 = axs[i, :]
+        X1, X2 = np.meshgrid(grid, grid)
+        ax1.contourf(X1, X2, vf_delta, **vf_kwargs)
+        ax2.contourf(X1, X2, pol_delta[..., 0], **pol_kwargs)
+        ax3.contourf(X1, X2, pol_delta[..., 1], **pol_kwargs)
+        for ax in axs[i, :]:
+            ax.set_xlabel("$x_1$")
+            ax.set_ylabel("$x_2$")
+            ax.set_aspect("equal")
+        if i == 0:
+            ax1.set_title("Error in $V(x)$")
+            ax2.set_title("Error in $u_1(x)$")
+            ax3.set_title("Error in $u_2(x)$")
+
+    for norm, axs in ((vf_norm, ax1), (pol_norm, (ax2, ax3))):
+        fig.colorbar(cm.ScalarMappable(norm, cmap), ax=axs, orientation="horizontal")
+
+
 if __name__ == "__main__":
     parser = ArgumentParser(
-        description="Comparison of learned policy w.r.t. optimal one.",
+        description="Comparison of learned value function and policy w.r.t. optimal.",
         formatter_class=ArgumentDefaultsHelpFormatter,
     )
-    group = parser.add_argument_group("Policies to compare")
+    group = parser.add_argument_group("Results to compare")
     group.add_argument(
-        "filename1",
+        "filenames",
         type=str,
-        help="First filename of the policies to compare (either the results from "
-        "training or a pre-computed explicit solution).",
+        nargs="+",
+        help="Filenames with training results whose value functions and policies are to"
+        " be compared to the explicit optimal ones.",
     )
     group.add_argument(
-        "filename2",
-        type=str,
-        help="Second filename of the policies to compare (see previous).",
+        "agent", type=int, help="Index of the agent to compare the results for."
     )
     group = parser.add_argument_group("Other options")
-    group.add_argument("--log-scale", action="store_true", help="Plots in log-scale.")
+    group.add_argument("--log", action="store_true", help="Plots in log scale.")
     group.add_argument(
         "--n-jobs", type=int, default=1, help="Number of parallel processes (positive)."
     )
     args = parser.parse_args()
-
-    fn1: str = args.filename1
-    fn2: str = args.filename2
+    idx = args.agent
     n_jobs = max(args.n_jobs, 1)
 
-    # load or compute the two policies
-    is_fn1_npz = fn1.endswith(".npz")
-    is_fn2_npz = fn2.endswith(".npz")
-    if is_fn1_npz and is_fn2_npz:
-        grid, policy1 = load_precomputed_policy(fn1)
-        grid_, policy2 = load_precomputed_policy(fn2)
-        assert np.array_equal(grid, grid_), "Grids must be the same for comparison."
-    elif not (is_fn1_npz or is_fn2_npz):
-        raise ArgumentError(
-            "At least one of the two policies must be pre-computed (a .npz file)."
-        )
-    elif is_fn1_npz:
-        grid, policy1 = load_precomputed_policy(fn1)
-        policy2 = compute_policy(fn2, grid, n_jobs)
-    else:
-        grid, policy2 = load_precomputed_policy(fn2)
-        policy2 = compute_policy(fn1, grid, n_jobs)
+    # do first the computations
+    results = []
+    for fn in args.filenames:
+        # load the data from the file - we need training args and final learned params
+        data = load(fn)
+        sim_args = data.pop("args")
+        mpc_pars = {n: p[idx, -1] for n, p in data["updates_history"].items()}
+        print(fn.upper(), f"Args: {sim_args}\n", sep="\n")
 
-    # plot differences between the two policies
-    X1, X2 = np.meshgrid(grid, grid)
-    delta = np.abs(policy1 - policy2)
-    vmin = np.nanmin(delta)
-    vmax = np.nanmax(delta)
-    if args.log_scale:
-        delta = np.log10(delta)
-        vmin = np.log10(vmin)
-        vmax = np.log10(vmax)
+        # load the corresponding optima and compute the learned ones
+        grid, opt_valfun, opt_policy = load_explicit(sim_args["dcbf"], sim_args["soft"])
+        learned_valfun = compute_learned_value_function(grid, sim_args, mpc_pars)
+        learned_policy = compute_learned_policy(grid, sim_args, mpc_pars, n_jobs)
 
-    kwargs = {"vmin": vmin, "vmax": vmax, "cmap": "RdBu_r"}
+        # compute the difference between the two value functions and policies
+        vf_delta = opt_valfun - learned_valfun
+        pol_delta = opt_policy - learned_policy
+        results.append((grid, vf_delta, pol_delta))
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, constrained_layout=True)
-    ax1.contourf(X1, X2, delta[..., 0], **kwargs)
-    CS = ax2.contourf(X1, X2, delta[..., 1], **kwargs)
-    ax1.set_title("Abs. error in $u_1$")
-    ax1.set_xlabel("$x_1$")
-    ax1.set_ylabel("$x_2$")
-    ax1.set_aspect("equal")
-    ax2.set_title("Abs. error in $u_2$")
-    ax2.set_xlabel("$x_1$")
-    ax2.set_ylabel("$x_2$")
-    ax2.set_aspect("equal")
-    fig.colorbar(CS, ax=(ax1, ax2), orientation="horizontal")
+    # then, do the plotting itself
+    do_plot(results, args.log)
     plt.show()

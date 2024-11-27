@@ -118,7 +118,8 @@ def compute_value_func_and_policy(
 if __name__ == "__main__":
     # parse script arguments
     parser = argparse.ArgumentParser(
-        description="Computates value function for the constrained LTI environment.",
+        description="Computates optimal value function and policy for the constrained "
+        "LTI environment.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     group = parser.add_argument_group("MPC options")
@@ -158,7 +159,7 @@ if __name__ == "__main__":
         action="store_true",
         help="Shows results in a plot at the end of the simulation.",
     )
-    group.add_argument("--log-scale", action="store_true", help="Plots in log-scale.")
+    group.add_argument("--log", action="store_true", help="Plots in log scale.")
     group = parser.add_argument_group("Computational options")
     group.add_argument(
         "--n-jobs", type=int, default=1, help="Number of parallel processes (positive)."
@@ -175,49 +176,8 @@ if __name__ == "__main__":
         np.savez_compressed(args.save, grid=grid_points, V=V, U=U)
     if args.plot or not args.save:
         import matplotlib.pyplot as plt
-        from matplotlib.ticker import FuncFormatter, LogLocator, MaxNLocator
 
-        X1, X2 = np.meshgrid(grid_points, grid_points)
+        from lti_example.explicit_sol.plot import do_plot
 
-        fig = plt.figure(figsize=(7, 7), constrained_layout=True)
-        ax1 = fig.add_subplot(2, 2, 1)
-        ax2 = fig.add_subplot(2, 2, 2, projection="3d")
-        ax3 = fig.add_subplot(2, 2, 3, projection="3d")
-        ax4 = fig.add_subplot(2, 2, 4, projection="3d")
-
-        kwargs = {"vmin": np.nanmin(V), "vmax": np.nanmax(V), "cmap": "RdBu_r"}
-        CS = ax1.contourf(X1, X2, V, locator=LogLocator(subs="auto"), **kwargs)
-        # ax1.clabel(CS, CS.levels[::10], inline=True, fontsize=10, colors='k')
-        if args.log_scale:
-            kwargs["vmin"] = np.log10(kwargs["vmin"])
-            kwargs["vmax"] = np.log10(kwargs["vmax"])
-            V = np.log10(V)
-        ax2.plot_surface(X1, X2, V, **kwargs)
-
-        kwargs.update({"vmin": -Env.a_bound, "vmax": Env.a_bound})
-        ax3.plot_surface(X1, X2, U[..., 0], **kwargs)
-        ax4.plot_surface(X1, X2, U[..., 1], **kwargs)
-
-        ax1.set_title("Value function (top)")
-        ax1.set_xlabel("$x_1$")
-        ax1.set_ylabel("$x_2$")
-        ax1.set_aspect("equal", adjustable="box")
-        ax2.set_title("Value function")
-        ax2.set_xlabel("$x_1$")
-        ax2.set_ylabel("$x_2$")
-        ax2.set_zlabel("$V(x)$")
-        if args.log_scale:
-            # thanks to https://stackoverflow.com/a/67774238/19648688
-            ax2.zaxis.set_major_formatter(
-                FuncFormatter(lambda val, _: f"$10^{{{int(val)}}}$")
-            )
-            ax2.zaxis.set_major_locator(MaxNLocator(integer=True))
-        ax3.set_title("Policy (1)")
-        ax3.set_xlabel("$x_1$")
-        ax3.set_ylabel("$x_2$")
-        ax3.set_zlabel("$u_1$")
-        ax4.set_title("Policy (2)")
-        ax4.set_xlabel("$x_1$")
-        ax4.set_ylabel("$x_2$")
-        ax4.set_zlabel("$u_2$")
+        do_plot(({"grid": grid_points, "V": V, "U": U},), args.log)
         plt.show()

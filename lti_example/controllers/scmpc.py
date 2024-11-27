@@ -23,6 +23,7 @@ def create_scmpc(
     soft: bool,
     bound_initial_state: bool,
     terminal_cost: set[Literal["dlqr", "pwqnn"]],
+    hidden_size: int = PWQNN_HIDDEN,
     env: ConstrainedLtiEnv | None = None,
     *_: Any,
     **__: Any,
@@ -51,6 +52,8 @@ def create_scmpc(
         network is used to approximate the terminal cost. Can also be a set of multiple
         terminal costs to use, at which point these are summed together; can also be an
         empty set, in which case no terminal cost is used.
+    hidden_size : int, optional
+        The number of hidden units in the piecewise quadratic neural network, if used.
     env : ConstrainedLtiEnv, optional
         The environment to build the SCMPC for. If `None`, a new default environment is
         instantiated.
@@ -118,7 +121,7 @@ def create_scmpc(
         _, P = dlqr(A, B, Q, R)
         J += cs.bilin(P, xT)
     if "pwqnn" in terminal_cost:
-        pwqnn = PwqNN(ns, PWQNN_HIDDEN)
+        pwqnn = PwqNN(ns, hidden_size)
         nnfunc = nn2function(pwqnn, prefix="pwqnn")
         nnfunc = nnfunc.factory("F", nnfunc.name_in(), ("y", "grad:y:x", "hess:y:x:x"))
         weights = {

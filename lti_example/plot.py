@@ -433,7 +433,7 @@ if __name__ == "__main__":
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
-        "filename",
+        "filenames",
         type=str,
         nargs="+",
         help="Filenames of the results on disk to load and plot.",
@@ -480,7 +480,7 @@ if __name__ == "__main__":
     sim_args = []
     data = []
     unique_names = []
-    for filename in args.filename:
+    for filename in args.filenames:
         if filename in unique_names:
             continue
         sim_arg, datum = load_single_file(filename)
