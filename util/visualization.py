@@ -12,6 +12,7 @@ def plot_population(
     axis: int | tuple[int, ...],
     use_quartiles: bool = False,
     log: bool = False,
+    clip_min: float | None = None,
     marker: str | None = None,
     ls: str | None = None,
     color: str | None = None,
@@ -38,6 +39,8 @@ def plot_population(
         default `False`.
     log : bool, optional
         If `True`, the y-axis is plotted in log scale, by default `False`.
+    clip_min : float, optional
+        If given, clips the plot to this minimum value, by default `None`.
     marker : str, optional
         The marker to use in the plot, by default `None`.
     ls : str, optional
@@ -54,6 +57,8 @@ def plot_population(
         std = np.nanstd(y, axis)
         lower = middle - std
         upper = middle + std
+    if clip_min is not None:
+        lower = np.maximum(lower, clip_min)
     method = ax.semilogy if log else ax.plot
     c = method(x, middle, label=None, marker=marker, ls=ls, color=color)[0].get_color()
     if alpha > 0:

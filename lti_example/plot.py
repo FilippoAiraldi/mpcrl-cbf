@@ -65,33 +65,47 @@ def plot_states_and_actions(
         `"actions"` and `"states"`.
     """
     fig = plt.figure(constrained_layout=True)
-    gs = GridSpec(2, 2, fig)
-    ax1 = fig.add_subplot(gs[:, 0])
+    gs = GridSpec(3, 2, fig)
+    ax1 = fig.add_subplot(gs[:2, 0])
     ax2 = fig.add_subplot(gs[0, 1])
     ax3 = fig.add_subplot(gs[1, 1], sharex=ax2)
+    ax4 = fig.add_subplot(gs[2, :])
 
-    x_max = Env.x_soft_bound
+    env = Env(0)
+    ns = env.ns
+    na = env.na
+    nc = env.dcbf_constraints.size1_out(0)
+    x_max = env.x_soft_bound
     ax1.add_patch(Rectangle((-x_max, -x_max), 2 * x_max, 2 * x_max, fill=False))
 
     for i, datum in enumerate(data):
-        returns = datum["cost"]  # n_agents x n_ep
         actions = datum["actions"]  # n_agents x n_ep x timesteps x na
         states = datum["states"]  # n_agents x n_ep x timesteps + 1 x ns
         c = f"C{i}"
-        timesteps = actions.shape[2]
+        n_ag, n_ep, timesteps = actions.shape[:3]
         time = np.arange(timesteps)
 
         # flatten the first two axes as we do not distinguish between different agents
-        returns = returns.reshape(-1)
-        actions = actions.reshape(-1, timesteps, Env.na)
-        states = states.reshape(-1, timesteps + 1, Env.ns)
-
-        for state_traj, action_traj in zip(states, actions):
+        actions_ = actions.reshape(-1, timesteps, na)
+        states_ = states.reshape(-1, timesteps + 1, ns)
+        for state_traj, action_traj in zip(states_, actions_):
             ax1.plot(*state_traj.T, c)
             violating = (np.abs(state_traj) > x_max + 1e-3).any(1)
             ax1.plot(*state_traj[violating].T, "r", ls="none", marker="x")
             ax2.step(time, action_traj[:, 0], c, where="post")
             ax3.step(time, action_traj[:, 1], c, where="post")
+
+        episodes = np.arange(n_ep)
+        states__ = states[..., :-1, :].reshape(-1, ns).T
+        actions__ = actions.reshape(-1, na).T
+        violations = -(
+            env.dcbf_constraints(states__, actions__)
+            .toarray()
+            .T.reshape(n_ag, n_ep, timesteps, nc)
+        )
+        # cumviolations = np.maximum(0.0, violations).sum((2, 3))
+        numviolations = (violations > 0.0).any(3).sum(2)
+        plot_population(ax4, episodes, numviolations, axis=0, color=c, clip_min=0)
 
     ax1.set_xlabel("$x_1$")
     ax1.set_ylabel("$x_2$")
@@ -99,6 +113,8 @@ def plot_states_and_actions(
     ax2.set_ylabel("$u_1$")
     ax3.set_ylabel("$u_2$")
     ax3.set_xlabel("$k$")
+    ax4.set_xlabel("Episode")
+    ax4.set_ylabel("Num. of Violations")
 
 
 def plot_returns(
