@@ -11,7 +11,7 @@ from env import ConstrainedLtiEnv
 from mpcrl.util.control import dlqr
 from mpcrl.util.seeding import RngType
 
-from util.defaults import DCBF_GAMMA, PWQNN_HIDDEN, SOLVER_OPTS
+from util.defaults import DCBF_GAMMA, PWQNN_HIDDEN, SOLVER_OPTS, TIME_MEAS
 from util.nn import nn2function
 from util.wrappers import nostdout
 
@@ -199,6 +199,6 @@ def get_scmpc_controller(
         disturbances = env.sample_disturbance_profiles(n_scenarios, horizon)
         with nostdout():
             u_opt, last_sol = func(x, num_weights, disturbances.reshape(-1), last_sol)
-        return u_opt.toarray().reshape(-1), inner_solver.stats()["t_proc_total"]
+        return u_opt.toarray().reshape(-1), inner_solver.stats()[TIME_MEAS]
 
     return _f

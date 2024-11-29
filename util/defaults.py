@@ -55,3 +55,4 @@ SOLVER_OPTS = {
 
 PWQNN_HIDDEN = 16
 DCBF_GAMMA = 0.95
+TIME_MEAS = "t_proc_total"  # or t_wall_total

@@ -5,6 +5,8 @@ from typing import Any, TypeVar
 import casadi as cs
 from csnlp import Nlp, wrappers
 
+from util.defaults import TIME_MEAS
+
 SymType = TypeVar("SysType", cs.MX, cs.SX)
 
 
@@ -50,5 +52,5 @@ class RecordSolverTime(wrappers.Wrapper[SymType]):
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         sol = self.nlp.__call__(*args, **kwargs)
-        self.solver_time.append(sol.stats["t_proc_total"])
+        self.solver_time.append(sol.stats[TIME_MEAS])
         return sol

@@ -8,7 +8,7 @@ from csnlp import Nlp
 from env import ConstrainedLtiEnv as Env
 from mpcrl.util.control import dcbf, dlqr
 
-from util.defaults import DCBF_GAMMA, SOLVER_OPTS
+from util.defaults import DCBF_GAMMA, SOLVER_OPTS, TIME_MEAS
 
 
 def create_dclf_dcbf_qcqp(env: Env | None = None, *_: Any, **__: Any) -> Nlp[cs.MX]:
@@ -80,6 +80,6 @@ def get_dclf_dcbf_controller(
     def _f(x, _):
         nonlocal last_sol
         u, last_sol = func(x, last_sol)
-        return u.toarray().reshape(-1), func.stats()["t_proc_total"]
+        return u.toarray().reshape(-1), func.stats()[TIME_MEAS]
 
     return _f

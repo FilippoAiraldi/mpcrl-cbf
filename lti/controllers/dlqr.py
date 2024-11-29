@@ -1,11 +1,13 @@
 from collections.abc import Callable
-from time import process_time
+from time import perf_counter, process_time
 from typing import Any
 
 import numpy as np
 import numpy.typing as npt
 from env import ConstrainedLtiEnv as Env
 from mpcrl.util.control import dlqr
+
+from util.defaults import TIME_MEAS
 
 
 def get_dlqr_controller(
@@ -21,10 +23,11 @@ def get_dlqr_controller(
     """
     K, _ = dlqr(Env.A, Env.B, Env.Q, Env.R)
     a_min = Env.a_bound
+    timer_func = perf_counter if "wall" in TIME_MEAS else process_time
 
     def _f(x, _):
-        t0 = process_time()
+        t0 = timer_func()
         u = np.clip(-np.dot(K, x), -a_min, a_min)
-        return u, process_time() - t0
+        return u, timer_func() - t0
 
     return _f
