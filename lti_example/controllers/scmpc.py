@@ -4,7 +4,6 @@ from typing import Any, Literal
 import casadi as cs
 import numpy as np
 import numpy.typing as npt
-from controllers.config import DCBF_GAMMA, PWQNN_HIDDEN, SOLVER_OPTS
 from csnlp import Nlp
 from csnlp.wrappers import ScenarioBasedMpc
 from csnn.convex import PwqNN
@@ -12,6 +11,7 @@ from env import ConstrainedLtiEnv
 from mpcrl.util.control import dlqr
 from mpcrl.util.seeding import RngType
 
+from util.defaults import DCBF_GAMMA, PWQNN_HIDDEN, SOLVER_OPTS
 from util.nn import nn2function
 from util.wrappers import nostdout
 

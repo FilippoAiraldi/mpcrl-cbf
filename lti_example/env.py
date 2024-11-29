@@ -4,10 +4,10 @@ import casadi as cs
 import gymnasium as gym
 import numpy as np
 import numpy.typing as npt
-from controllers.config import DCBF_GAMMA
 from mpcrl.util.control import dcbf
 from mpcrl.util.geometry import ConvexPolytopeUniformSampler
 
+from util.defaults import DCBF_GAMMA
 from util.loose_box import LooseBox
 
 ObsType: TypeAlias = npt.NDArray[np.floating]

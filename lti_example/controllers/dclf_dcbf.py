@@ -4,10 +4,11 @@ from typing import Any
 import casadi as cs
 import numpy as np
 import numpy.typing as npt
-from controllers.config import DCBF_GAMMA, SOLVER_OPTS
 from csnlp import Nlp
 from env import ConstrainedLtiEnv as Env
 from mpcrl.util.control import dcbf, dlqr
+
+from util.defaults import DCBF_GAMMA, SOLVER_OPTS
 
 
 def create_dclf_dcbf_qcqp(env: Env | None = None, *_: Any, **__: Any) -> Nlp[cs.MX]:

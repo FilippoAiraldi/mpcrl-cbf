@@ -9,6 +9,16 @@ SOLVER_OPTS = {
         "calc_lam_x": True,
         "fatrop": {"max_iter": 500, "print_level": 0},
     },
+    "ipopt": {
+        "error_on_fail": False,
+        "expand": True,
+        "print_time": False,
+        "record_time": True,
+        "bound_consistency": True,
+        "calc_lam_p": False,
+        "calc_lam_x": True,
+        "ipopt": {"max_iter": 500, "print_level": 0, "sb": "yes"},
+    },
     "qpoases": {
         "error_on_fail": False,
         "expand": True,
@@ -40,16 +50,6 @@ SOLVER_OPTS = {
         "expand": True,
         "record_time": True,
         "gurobi": {"OutputFlag": 0},
-    },
-    "ipopt": {
-        "error_on_fail": False,
-        "expand": True,
-        "print_time": False,
-        "record_time": True,
-        "bound_consistency": True,
-        "calc_lam_p": False,
-        "calc_lam_x": True,
-        "ipopt": {"max_iter": 500, "print_level": 0, "sb": "yes"},
     },
 }
 
