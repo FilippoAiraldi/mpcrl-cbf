@@ -273,8 +273,7 @@ if __name__ == "__main__":
         "--save",
         type=str,
         default=default_save,
-        help="Saves with this filename the results under controllers/data. If not set,"
-        " a default file path is created.",
+        help="Saves results with this filename. If not set, a default name is given.",
     )
     group.add_argument(
         "--plot",

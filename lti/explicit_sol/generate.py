@@ -151,8 +151,7 @@ if __name__ == "__main__":
         "--save",
         type=str,
         default="",
-        help="Saves with this filename the results under controllers/data. If not set,"
-        " no data is saved.",
+        help="Saves results with this filename. If not set, no data is saved.",
     )
     group.add_argument(
         "--plot",
