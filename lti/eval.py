@@ -1,4 +1,3 @@
-import os
 import sys
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentError, ArgumentParser
 from collections.abc import Callable
@@ -9,7 +8,8 @@ import numpy as np
 import numpy.typing as npt
 from joblib import Parallel, delayed
 
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+repo_dir = Path(__file__).resolve().parents[1]
+sys.path.append(str(repo_dir))
 
 from env import ConstrainedLtiEnv as Env
 
@@ -261,12 +261,7 @@ if __name__ == "__main__":
     if args.save:
         from csnlp.util.io import save
 
-        path = Path("data")
-        if not path.is_dir():
-            path = "lti_example" / path
-        path.mkdir(parents=True, exist_ok=True)
-        fn = str(path / args.save)
-        save(fn, **data_dict, args=args.__dict__, compression="lzma")
+        save(args.save, **data_dict, args=args.__dict__, compression="lzma")
     if args.plot or not args.save:
         import matplotlib.pyplot as plt
         from plot import plot_returns, plot_solver_times, plot_states_and_actions

@@ -18,8 +18,7 @@ from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Rectangle
 from mpcrl.util.control import dlqr
 
-lti_dir = Path(__file__).parent
-sys.path.append(str(lti_dir.parent))
+sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from env import ConstrainedLtiEnv as Env
 

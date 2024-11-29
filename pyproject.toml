@@ -1,2 +1,2 @@
 [tool.black]
-extend-exclude = "lti_example/explicit_sol/matlab/*"
+extend-exclude = "lti/explicit_sol/tbxmanager/*"

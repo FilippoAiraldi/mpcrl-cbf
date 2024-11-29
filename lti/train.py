@@ -1,5 +1,4 @@
 import argparse
-import os
 import sys
 from datetime import datetime
 from logging import DEBUG
@@ -15,7 +14,7 @@ from mpcrl.util.seeding import RngType
 from mpcrl.wrappers.agents import Log, RecordUpdates
 from mpcrl.wrappers.envs import MonitorEpisodes
 
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from controllers.scmpc import create_scmpc
 from env import ConstrainedLtiEnv as Env
@@ -333,12 +332,7 @@ if __name__ == "__main__":
     if args.save:
         from csnlp.util.io import save
 
-        path = Path("data")
-        if not path.is_dir():
-            path = "lti_example" / path
-        path.mkdir(parents=True, exist_ok=True)
-        fn = str(path / args.save)
-        save(fn, **data_dict, args=args.__dict__, compression="lzma")
+        save(args.save, **data_dict, args=args.__dict__, compression="lzma")
     if args.plot or not args.save:
         import matplotlib.pyplot as plt
         from plot import (

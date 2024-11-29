@@ -10,8 +10,8 @@ import numpy as np
 import numpy.typing as npt
 from joblib import Parallel, delayed
 
-lti_example_dir = Path(__file__).parent.parent
-sys.path.extend((str(lti_example_dir.parent), str(lti_example_dir)))
+lti_dir = Path(__file__).parent.parent
+sys.path.extend((str(lti_dir.parent), str(lti_dir)))
 
 from controllers.mpc import create_mpc
 from env import ConstrainedLtiEnv as Env
@@ -177,7 +177,7 @@ if __name__ == "__main__":
     if args.plot or not args.save:
         import matplotlib.pyplot as plt
 
-        from lti_example.explicit_sol.plot import do_plot
+        from lti.explicit_sol.plot import do_plot
 
         do_plot(({"grid": grid_points, "V": V, "U": U},), args.log)
         plt.show()

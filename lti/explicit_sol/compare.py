@@ -16,9 +16,8 @@ from joblib import Parallel, delayed
 from matplotlib import cm, colors
 from mpcrl.util.control import dlqr
 
-explicit_sol_dir = Path(__file__).parent
-lti_example_dir = explicit_sol_dir.parent
-sys.path.extend((str(lti_example_dir.parent), str(lti_example_dir)))
+expl_sol_dir, lti_dir, repo_dir = Path(__file__).resolve().parents[:3]
+sys.path.extend((str(repo_dir), str(lti_dir)))
 
 from controllers.mpc import create_mpc
 from env import ConstrainedLtiEnv as Env
@@ -41,7 +40,7 @@ def load_explicit(dcbf: bool, soft: bool) -> tuple[npt.NDArray[np.floating], ...
     tuple of 3 arrays
         The grid, optimal value function and optimal control policy over the grid.
     """
-    filename = str(explicit_sol_dir / "data")
+    filename = str(expl_sol_dir / "data")
     if dcbf:
         filename += "_dcbf"
     if soft:
