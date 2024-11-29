@@ -10,7 +10,6 @@ from warnings import warn
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
-from csnlp.util.io import load
 from csnn.convex import PwqNN
 from joblib import Parallel, delayed
 from matplotlib.colors import LinearSegmentedColormap
@@ -18,37 +17,23 @@ from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Rectangle
 from mpcrl.util.control import dlqr
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
+lti_dir, repo_dir = Path(__file__).resolve().parents[:2]
+sys.path.append(str(repo_dir))
 
 from env import ConstrainedLtiEnv as Env
 
 from util.nn import nn2function
-from util.visualization import plot_population, plot_single_violin
+from util.visualization import (
+    load_file,
+    plot_population,
+    plot_returns,
+    plot_solver_times,
+    plot_training,
+)
 
 plt.style.use("seaborn-v0_8-pastel")
 plt.rcParams["lines.linewidth"] = 0.75
 plt.rcParams["lines.markersize"] = 6
-
-
-def load_single_file(
-    filename: str,
-) -> tuple[dict[str, Any], dict[str, npt.NDArray[np.floating]]]:
-    """Loads the data from a single file on disk.
-
-    Parameters
-    ----------
-    filename : str
-        The filename of the file to load.
-
-    Returns
-    -------
-    tuple of two dictionaries
-        Returns the arguments used to run the simualtion script, as well as the data
-        itselft. Both of these are dictionaries.
-    """
-    data = load(filename)
-    args = data.pop("args")
-    return args, data
 
 
 def plot_states_and_actions(
@@ -114,174 +99,6 @@ def plot_states_and_actions(
     ax3.set_xlabel("$k$")
     ax4.set_xlabel("Episode")
     ax4.set_ylabel("Num. of Violations")
-
-
-def plot_returns(
-    data: Collection[dict[str, npt.NDArray[np.floating]]],
-    names: Collection[str] | None = None,
-) -> None:
-    """Plots the returns of the simulations.
-
-    Parameters
-    ----------
-    data : collection of dictionaries (str, arrays)
-        The dictionaries from different simulations, each containing the key `"cost"`.
-    names : collection of str, optional
-        The names of the simulations to use in the plot.
-    """
-    _, (ax1, ax2) = plt.subplots(2, 1, constrained_layout=True)
-
-    for i, datum in enumerate(data):
-        c = f"C{i}"
-        returns = datum["cost"]  # n_agents x n_ep
-        episodes = np.arange(returns.shape[1])
-        # print(f"cost: {np.mean(returns)} ± {np.std(returns)} | {np.median(returns)}")
-        # in the first axis, flatten the first two axes as we do not distinguish between
-        # different agents
-        returns_flat = returns.reshape(-1)
-        plot_single_violin(
-            ax1,
-            i,
-            returns_flat,
-            showextrema=False,
-            quantiles=[0.25, 0.5, 0.75],
-            color=c,
-        )
-        plot_population(ax2, episodes, returns, axis=0, color=c)
-
-    ax1.set_xticks(range(len(data)))
-    if names is not None:
-        ax1.set_xticklabels(names)
-    ax1.set_ylabel("Return")
-    ax2.set_xlabel("Episode")
-    ax2.set_ylabel("Return")
-
-
-def plot_solver_times(
-    data: Collection[dict[str, npt.NDArray[np.floating]]],
-    names: Collection[str] | None = None,
-) -> None:
-    """Plots the solver times of the simulations. For agents with a solver for the
-    state and action value functions, their computation times are plotted separately.
-
-    Parameters
-    ----------
-    data : collection of dictionaries (str, arrays)
-        The dictionaries from different simulations, each containing the key
-        `"sol_times"`.
-    names : collection of str, optional
-        The names of the simulations to use in the plot.
-    """
-    _, ax = plt.subplots(1, 1, constrained_layout=True)
-
-    for i, datum in enumerate(data):
-        c = f"C{i}"
-        sol_times = datum["sol_times"]  # n_agents x n_ep x timestep (x 2, optional)
-        kw = {"showextrema": False, "quantiles": [0.25, 0.5, 0.75], "color": c}
-
-        # flatten the first three axes as we do not distinguish between different
-        # agents, episodes or time steps
-        sol_times_flat = sol_times.reshape(-1, *sol_times.shape[3:])
-        # print(f"sol. time: {np.mean(st):e} ± {np.std(st):e} | {np.median(st):e}")
-        if sol_times_flat.ndim == 1:
-            plot_single_violin(ax, i, sol_times_flat, **kw)
-        else:
-            assert sol_times_flat.ndim == 2, "Unexpected shape of `sol_times_flat`"
-            sol_times_V, sol_times_Q = sol_times_flat.T
-            for side, times in (("low", sol_times_V), ("high", sol_times_Q)):
-                plot_single_violin(ax, i, times, side=side, **kw)
-
-    ax.set_xticks(range(len(data)))
-    if names is not None:
-        ax.set_xticklabels(names)
-    ax.set_ylabel("Solver time [s]")
-    ax.set_yscale("log")
-
-
-def plot_training(
-    data: Collection[dict[str, npt.NDArray[np.floating]]], *_: Any, **__: Any
-) -> None:
-    """Plots the training results of the simulations. This plot does not show anything
-    if the data does not contain training results.
-
-    Parameters
-    ----------
-    data : collection of dictionaries (str, arrays)
-        The dictionaries from different simulations, each potentially containing the
-        keys `"updates_history"`, `"td_errors"`, or `"policy_performances"`.
-    """
-    param_names = set()
-    for datum in data:
-        if "updates_history" in datum:
-            param_names.update(datum["updates_history"].keys())
-    any_td = any("td_errors" in d for d in data)
-    any_pg = any("policy_gradients" in d for d in data)
-    any_other = any_td or any_pg
-    n = len(param_names)
-    if n == 0 and not any_other:
-        return
-
-    fig = plt.figure(constrained_layout=True)
-    ncols = int(np.round(np.sqrt(n)))
-    nrows = int(np.ceil(n / ncols))
-    gs = GridSpec(nrows + int(any_other), ncols, fig)
-    if any_other:
-        offset = 1
-        if any_td and any_pg:
-            ax_td = fig.add_subplot(gs[0, :])
-            ax_pg = ax_td.twinx()
-        elif any_td:
-            ax_td = fig.add_subplot(gs[0, :])
-        else:
-            ax_pg = fig.add_subplot(gs[0, :])
-    else:
-        offset = 0
-    param_names = sorted(param_names)
-    start = nrows * ncols - n
-    ax_par_first = fig.add_subplot(gs[start // ncols + offset, start % ncols])
-    ax_pars = {param_names[0]: ax_par_first}
-    for i, name in enumerate(param_names[1:], start=start + 1):
-        ax_pars[name] = fig.add_subplot(
-            gs[i // ncols + offset, i % ncols], sharex=ax_par_first
-        )
-
-    for i, datum in enumerate(data):
-        c = f"C{i}"
-
-        if "td_errors" in datum:
-            td_errors = datum["td_errors"]  # n_agents x n_ep x timestep
-            td_errors = np.abs(td_errors).sum(2)
-            episodes = np.arange(td_errors.shape[1])
-            plot_population(ax_td, episodes, td_errors, axis=0, color=c)
-        elif "policy_gradients" in datum:
-            n_ep = datum["cost"].shape[1]
-            grads = datum["policy_gradients"]  # n_agents x n_up x n_pars
-            norms = np.linalg.norm(grads, axis=2)
-            updates = np.linspace(0, n_ep - 1, grads.shape[1])
-            plot_population(ax_pg, updates, norms, axis=0, color=c, log=True)
-
-        if "updates_history" in datum:
-            for name, param in datum["updates_history"].items():
-                updates = np.arange(param.shape[1])
-                param = param.reshape(*param.shape[:2], -1)  # n_agents x n_up x ...
-                ax = ax_pars[name]
-                n = param.shape[2]
-                alpha = 0.25 if n == 1 else 0
-                for idx in range(param.shape[2]):
-                    plot_population(
-                        ax, updates, param[..., idx], axis=0, color=c, alpha=alpha
-                    )
-
-    if any_td:
-        ax_td.set_xlabel("Episode")
-        ax_td.set_ylabel(r"$\sum{|\delta|}$")
-    if any_pg:
-        ax_pg.set_xlabel("Episode")
-        ax_pg.set_ylabel(r"$\| \nabla_\theta J(\pi_\theta) \|_2$")
-    for name, ax in ax_pars.items():
-        ax.set_xlabel("Episode")
-        ax.set_ylabel(name)
-        ax._label_outer_xaxis(skip_non_rectangular_axes=False)
 
 
 def plot_terminal_cost_evolution(
@@ -498,7 +315,7 @@ if __name__ == "__main__":
     for filename in args.filenames:
         if filename in unique_names:
             continue
-        sim_arg, datum = load_single_file(filename)
+        sim_arg, datum = load_file(filename)
         unique_names.append(filename)
         sim_args.append(sim_arg)
         data.append(datum)
