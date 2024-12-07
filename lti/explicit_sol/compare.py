@@ -266,8 +266,8 @@ if __name__ == "__main__":
         learned_policy = compute_learned_policy(grid, sim_args, mpc_pars, n_jobs)
 
         # compute the difference between the two value functions and policies
-        vf_delta = opt_valfun - learned_valfun
-        pol_delta = opt_policy - learned_policy
+        vf_delta = learned_valfun - opt_valfun
+        pol_delta = learned_policy - opt_policy
         results.append((grid, vf_delta, pol_delta))
 
     # then, do the plotting itself
