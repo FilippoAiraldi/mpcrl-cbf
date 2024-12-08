@@ -336,7 +336,7 @@ if __name__ == "__main__":
         print(filename.upper(), f"Args: {sim_arg}\n", sep="\n")
 
     if args.all or args.state_action:
-        plot_states_and_actions(data, unique_names)
+        plot_states_and_actions(data, sim_args, unique_names)
     if args.all or args.returns:
         plot_returns(data, unique_names)
     if args.all or args.solver_time:
