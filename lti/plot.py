@@ -16,6 +16,7 @@ from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Rectangle
 from mpcrl.util.control import dlqr
+from scipy.stats import sem
 
 lti_dir, repo_dir = Path(__file__).resolve().parents[:2]
 sys.path.append(str(repo_dir))
@@ -37,16 +38,25 @@ plt.rcParams["lines.markersize"] = 6
 
 
 def plot_states_and_actions(
-    data: Collection[dict[str, npt.NDArray[np.floating]]], *_: Any, **__: Any
+    data: Collection[dict[str, npt.NDArray[np.floating]]],
+    args: Collection[dict[str, Any]],
+    names: Collection[str] | None = None,
+    *_: Any,
+    **__: Any,
 ) -> None:
-    """Plots the state trajectories and actions of the simulations. This plot does not
-    distinguish between different agents as it plots them all together.
+    """Plots the state trajectories and actions of the simulations, as well as the
+    constraint violations. For states and actions, this plot does not distinguish
+    between different agents as it plots all trajectories together.
 
     Parameters
     ----------
     data : collection of dictionaries (str, arrays)
         The dictionaries from different simulations, each containing the keys
         `"actions"` and `"states"`.
+    args : collection of dictionaries (str, Any)
+        The arguments used to run the simulation scripts.
+    names : collection of str, optional
+        The names of the simulations to use in the plot.
     """
     fig = plt.figure(constrained_layout=True)
     gs = GridSpec(3, 2, fig)
@@ -62,7 +72,9 @@ def plot_states_and_actions(
     x_max = env.x_soft_bound
     ax1.add_patch(Rectangle((-x_max, -x_max), 2 * x_max, 2 * x_max, fill=False))
 
-    for i, datum in enumerate(data):
+    violations_data = []
+
+    for i, (arg, datum) in enumerate(zip(args, data)):
         actions = datum["actions"]  # n_agents x n_ep x timesteps x na
         states = datum["states"]  # n_agents x n_ep x timesteps + 1 x ns
         c = f"C{i}"
@@ -79,17 +91,20 @@ def plot_states_and_actions(
             ax2.step(time, action_traj[:, 0], c, where="post")
             ax3.step(time, action_traj[:, 1], c, where="post")
 
-        episodes = np.arange(n_ep)
         states__ = states[..., :-1, :].reshape(-1, ns).T
-        actions__ = actions.reshape(-1, na).T
-        violations = -(
-            env.dcbf_constraints(states__, actions__)
-            .toarray()
-            .T.reshape(n_ag, n_ep, timesteps, nc)
-        )
-        # cumviolations = np.maximum(0.0, violations).sum((2, 3))
-        numviolations = (violations > 0.0).any(3).sum(2)
-        plot_population(ax4, episodes, numviolations, axis=0, color=c, clip_min=0)
+        if not arg["dcbf"]:
+            violations = env.safety_constraints(states__)
+        else:
+            actions__ = actions.reshape(-1, na).T
+            violations = env.dcbf_constraints(states__, actions__)
+        violations = -violations.toarray().T.reshape(n_ag, n_ep, timesteps, nc)
+        prob_violations = (violations > 0.0).any(3).mean((1, 2)) * 100.0
+        mean = prob_violations.mean(0)
+        se = sem(prob_violations)
+        violations_data.append((mean, se))
+
+    violations_mean, violations_se = zip(*violations_data)
+    ax4.bar(names, violations_mean, yerr=violations_se, capsize=5)
 
     ax1.set_xlabel("$x_1$")
     ax1.set_ylabel("$x_2$")
@@ -97,8 +112,7 @@ def plot_states_and_actions(
     ax2.set_ylabel("$u_1$")
     ax3.set_ylabel("$u_2$")
     ax3.set_xlabel("$k$")
-    ax4.set_xlabel("Episode")
-    ax4.set_ylabel("Num. of Violations")
+    ax4.set_ylabel("Num. of Violations (%)")
 
 
 def plot_terminal_cost_evolution(
