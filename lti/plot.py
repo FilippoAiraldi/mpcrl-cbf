@@ -137,7 +137,10 @@ def plot_terminal_cost_evolution(
         The names of the simulations to use in the plot.
     """
     terminal_cost_components = [arg.get("terminal_cost", set()) for arg in args]
-    if not any("pwqnn" in cmp for cmp in terminal_cost_components):
+    is_learning = ["n_agents" in arg for arg in args]  # n_agent only present in train.
+    if not any("pwqnn" in cmp for cmp in terminal_cost_components) or not any(
+        is_learning
+    ):
         return
 
     _, P = dlqr(Env.A, Env.B, Env.Q, Env.R)
@@ -158,7 +161,7 @@ def plot_terminal_cost_evolution(
     r_sq_ls = (0, (5, 10))
     ep2idxs, logresiduals = [], []
     for i, (arg, tcosts, datum) in enumerate(zip(args, terminal_cost_components, data)):
-        if "pwqnn" not in tcosts:
+        if "pwqnn" not in tcosts or "n_agents" not in arg:
             continue
 
         # load the true value function
@@ -269,7 +272,9 @@ def plot_terminal_cost_evolution(
             ax_logres.set_title(name)
         ax_logres.set_xlim(-Env.x_soft_bound, Env.x_soft_bound)
         ax_logres.set_ylim(-Env.x_soft_bound, Env.x_soft_bound)
-        ax_logres.set_zlim(0, arg["n_episodes"] + 1)
+        ax_logres.set_zlim(
+            0, max(a["n_episodes"] for a in args if "n_episodes" in a) + 1
+        )
         ax_logres.invert_zaxis()
 
 

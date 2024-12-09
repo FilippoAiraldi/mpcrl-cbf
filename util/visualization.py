@@ -226,7 +226,7 @@ def plot_returns(
             quantiles=[0.25, 0.5, 0.75],
             color=c,
         )
-        plot_population(ax2, episodes, returns, axis=0, color=c)
+        plot_population(ax2, episodes, returns, axis=0, color=c, clip_min=0)
 
     ax1.set_xticks(range(len(data)))
     if names is not None:
