@@ -68,7 +68,7 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
 
     A = np.asarray([[1.0, 0.4], [-0.1, 1.0]])
     B = np.asarray([[1.0, 0.05], [0.5, 1.0]])
-    D = np.asarray([[0.3], [0.1]])
+    D = np.asarray([[0.03], [0.01]])
     ns, na = B.shape
     nd = D.shape[1]
     Q = np.eye(ns)
