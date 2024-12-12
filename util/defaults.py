@@ -52,7 +52,6 @@ SOLVER_OPTS = {
         "gurobi": {"OutputFlag": 0},
     },
 }
-
 PWQNN_HIDDEN = 16
 DCBF_GAMMA = 0.95
 TIME_MEAS = "t_proc_total"  # or t_wall_total

@@ -7,4 +7,4 @@ numba==0.60.0
 csnlp==1.6.3.post1
 mpcrl==1.3.1.post2
 tqdm==4.66.5
-csnn==1.0.4.post1
+csnn==1.0.5.post2

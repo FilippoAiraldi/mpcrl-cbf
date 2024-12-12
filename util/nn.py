@@ -1,28 +1,49 @@
 import casadi as cs
-from csnn.convex import PwqNN
+from csnn import Module
 
 
-def nn2function(net: PwqNN, name: str = "nn", prefix: str = "") -> cs.Function:
-    """Converts the neural network model to a CasADi function.
+def nn2function(net: Module, prefix: str) -> cs.Function:
+    """Converts a neural network model into a CasADi function.
 
     Parameters
     ----------
-    net : PwqNN
-        The neural network that must be converted to a function.
-    name : str
-        Name of the function.
-    prefix : str, optional
-        Prefix to add in front of this net's parameters.
+    net : Module
+        The neural network that must be converted to a function. Must either possess
+        an `input_layer` attribute or a `layers` attribute.
+    prefix : str
+        Prefix to add in front of the net's parameters. Used also to name the CasADi
+        function.
 
     Returns
     -------
     cs.Function
         A CasADi function with signature `"input" x "parameters" -> "output"`.
+
+    Raises
+    ------
+    ValueError
+        If the neural network model input layer cannot be identified.
     """
-    in_features = net.input_layer.in_features
+    if hasattr(net, "input_layer"):
+        in_features = net.input_layer.in_features
+    elif hasattr(net, "layers"):
+        in_features = net.layers[0].in_features
+    else:
+        raise ValueError(
+            "The neural network model must be an instance of Mlp, PwqNN or PsdNN."
+        )
     x = net.sym_type.sym("x", in_features, 1)
-    y = cs.simplify(cs.cse(net.forward(x.T).T))
-    p = dict(net.parameters(prefix=prefix, skip_none=True))
+
+    output = net.forward(x.T)
+    if output.is_row():
+        output = output.T
+
+    parameters = dict(net.parameters(prefix=prefix, skip_none=True))
     return cs.Function(
-        name, [x] + list(p.values()), [y], ["x"] + list(p.keys()), ["y"], {"cse": True}
+        prefix,
+        [x] + list(parameters.values()),
+        [cs.simplify(output)],
+        ["x"] + list(parameters.keys()),
+        ["y"],
+        {"cse": True},
     )

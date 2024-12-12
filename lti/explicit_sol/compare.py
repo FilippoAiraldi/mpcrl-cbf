@@ -81,7 +81,7 @@ def compute_learned_value_function(
         V += (X.transpose(1, 2, 0).dot(P) * X.transpose(1, 2, 0)).sum(-1)
     if "pwqnn" in tc_components:
         hidden_features = mpc_pars["pwqnn.input_layer.weight"].shape[0]
-        pwqnn = nn2function(PwqNN(Env.ns, hidden_features), prefix="pwqnn")
+        pwqnn = nn2function(PwqNN(Env.ns, hidden_features), "pwqnn")
         V += pwqnn(x=X, **mpc_pars)["y"].toarray().reshape(N, N)
     return V
 

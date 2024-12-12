@@ -193,7 +193,7 @@ def plot_terminal_cost_evolution(
             if hidden_features in pwqnn_cache:
                 pwqnn = pwqnn_cache[hidden_features]
             else:
-                pwqnn = nn2function(PwqNN(Env.ns, hidden_features), prefix="pwqnn")
+                pwqnn = nn2function(PwqNN(Env.ns, hidden_features), "pwqnn")
                 pwqnn_cache[hidden_features] = pwqnn
 
             tot_ep_to_plot = 20

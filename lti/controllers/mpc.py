@@ -114,7 +114,7 @@ def create_mpc(
         J += cs.bilin(P, xT)
     if "pwqnn" in terminal_cost:
         pwqnn = PwqNN(ns, hidden_size)
-        nnfunc = nn2function(pwqnn, prefix="pwqnn")
+        nnfunc = nn2function(pwqnn, "pwqnn")
         nnfunc = nnfunc.factory("F", nnfunc.name_in(), ("y", "grad:y:x", "hess:y:x:x"))
         weights = {
             n: mpc.parameter(n, p.shape)
