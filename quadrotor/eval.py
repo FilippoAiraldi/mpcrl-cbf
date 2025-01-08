@@ -41,6 +41,8 @@ def get_controller(
     """
     if controller_name == "mpc":
         from controllers.mpc import get_mpc_controller as func
+    elif controller_name == "scmpc":
+        from controllers.scmpc import get_scmpc_controller as func
     else:
         raise ValueError(f"Unknown controller: {controller_name}")
     return func(*args, **kwargs)

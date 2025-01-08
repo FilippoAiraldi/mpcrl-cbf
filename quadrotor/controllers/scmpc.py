@@ -4,13 +4,13 @@ from typing import Any, Literal
 import casadi as cs
 import numpy as np
 import numpy.typing as npt
+from controllers.mpc import get_discrete_time_dynamics, normalize_nn_input
 from csnlp import Nlp
-from csnlp.wrappers import Mpc
+from csnlp.wrappers import ScenarioBasedMpc
 from csnn import ReLU, Sigmoid, init_parameters
 from csnn.convex import PsdNN, PwqNN
 from csnn.feedforward import Mlp
 from env import QuadrotorEnv as Env
-from mpcrl.util.control import rk4
 from mpcrl.util.seeding import RngType
 from scipy.linalg import solve_discrete_are as dlqr
 
@@ -24,70 +24,9 @@ from util.defaults import (
 from util.nn import nn2function
 
 
-def get_discrete_time_dynamics(
-    env: Env, include_disturbance: bool = False
-) -> cs.Function:
-    """Constructs a discrete-time dynamics function for the quadrotor env.
-
-    Parameters
-    ----------
-    env : QuadrotorEnv
-        Quadrotor environment.
-    include_disturbance : bool, optional
-        Whether to include the disturbance in the dynamics or not.
-
-    Returns
-    -------
-    cs.Function
-        The discrete-time dynamics function.
-    """
-    x, u = env.dynamics.mx_in()
-    args = [x, u]
-    argnames = ["x", "u"]
-    if include_disturbance:
-        d = cs.MX.sym("d", env.nd)
-        u += d
-        args.append(d)
-        argnames.append("d")
-    xf = cs.simplify(rk4(lambda x_: env.dynamics(x_, u), x, env.sampling_time))
-    return cs.Function("dynamics", args, [xf], argnames, ["xf"], {"cse": True})
-    # CasADi native RK4 integrator cannot be expanded to SX unfortunately
-    # ode = {"x": x, "p": u, "ode":  env.dynamics(x, u)}
-    # integrator = cs.integrator(
-    #     "dyn_intg", "rk", ode, 0.0, sampling_time, {"number_of_finite_elements": 1}
-    # )
-
-
-def normalize_nn_input(
-    x: cs.MX | npt.NDArray[np.floating],
-    pos_obs: cs.MX | npt.NDArray[np.floating],
-    dir_obs: cs.MX | npt.NDArray[np.floating],
-) -> tuple[cs.MX | npt.NDArray[np.floating], ...]:
-    """Normalizes the input to the neural network.
-
-    Parameters
-    ----------
-    x : casadi MX or numpy array
-        The quadrotor state.
-    pos_obs : casadi MX or numpy array
-        The positions of the obstacles.
-    dir_obs : casadi MX or numpy array
-        The directions of the obstacles.
-
-    Returns
-    -------
-    tuple of 3 elements (casadi MX or numpy arrays)
-        The normalized state, position of the obstacles, and direction of the obstacles.
-    """
-    return (
-        (x - Env.x_mean) / Env.x_std,
-        (pos_obs - Env.pos_obs_mean) / Env.pos_obs_std,
-        (dir_obs - Env.dir_obs_mean) / Env.dir_obs_std,
-    )
-
-
-def create_mpc(
+def create_scmpc(
     horizon: int,
+    scenarios: int,
     dcbf: bool,
     soft: bool,
     bound_initial_state: bool,
@@ -98,13 +37,15 @@ def create_mpc(
     env: Env | None = None,
     *_: Any,
     **__: Any,
-) -> tuple[Mpc[cs.MX], Mlp | None, PwqNN | None, PsdNN | None]:
+) -> tuple[ScenarioBasedMpc[cs.MX], Mlp | None, PwqNN | None, PsdNN | None]:
     """Creates a nonlinear MPC controller for the `QuadrotorEnv` environment.
 
     Parameters
     ----------
     horizon : int
         The prediction horizon of the controller.
+    scenarios : int
+        The number of scenarios to consider in the SCMPC controller.
     dcbf : bool
         Whether to use discrete-time control barrier functions to enforce safety
         constraints or not.
@@ -144,30 +85,30 @@ def create_mpc(
     """
     if env is None:
         env = Env(0)
-    ns = env.ns
-    na = env.na
+    ns, na, nd = env.ns, env.na, env.nd
 
-    # create states and actions
-    mpc = Mpc(Nlp("MX"), horizon, shooting="multi")
-    x, x0 = mpc.state("x", ns)
-    u, _ = mpc.action("u", na, lb=env.a_lb[:, None], ub=env.a_ub[:, None])
+    # create states, actions and disturbances
+    scmpc = ScenarioBasedMpc(Nlp("MX"), scenarios, horizon, shooting="multi")
+    x, _, x0 = scmpc.state("x", ns)
+    u, _ = scmpc.action("u", na, lb=env.a_lb[:, None], ub=env.a_ub[:, None])
+    scmpc.disturbance("w", nd)
 
     # set other action constraints
-    u_prev = mpc.parameter("u_prev", (na,))
+    u_prev = scmpc.parameter("u_prev", (na,))
     du = cs.diff(cs.horzcat(u_prev[[1, 2]], u[[1, 2], :]), 1, 1)
     dtiltmax = env.dtiltmax * env.sampling_time
-    mpc.constraint("max_tilt", cs.cos(u[1, :]) * cs.cos(u[2, :]), ">=", env.tiltmax)
-    mpc.constraint("min_dtilt", du, ">=", -dtiltmax)
-    mpc.constraint("max_dtilt", du, "<=", dtiltmax)
+    scmpc.constraint("max_tilt", cs.cos(u[1, :]) * cs.cos(u[2, :]), ">=", env.tiltmax)
+    scmpc.constraint("min_dtilt", du, ">=", -dtiltmax)
+    scmpc.constraint("max_dtilt", du, "<=", dtiltmax)
 
     # set the dynamics along the horizon
-    dtdynamics = get_discrete_time_dynamics(env)
-    mpc.set_nonlinear_dynamics(dtdynamics)
+    dtdynamics = get_discrete_time_dynamics(env, include_disturbance=True)
+    scmpc.set_nonlinear_dynamics(dtdynamics)
 
     # set constraints for obstacle avoidance
     no = env.n_obstacles
-    pos_obs = mpc.parameter("pos_obs", (3, no))
-    dir_obs = mpc.parameter("dir_obs", (3, no))
+    pos_obs = scmpc.parameter("pos_obs", (3, no))
+    dir_obs = scmpc.parameter("dir_obs", (3, no))
     kappann = None
     if dcbf:
         in_features = ns + no * 6  # 3 positions + 3 directions
@@ -176,7 +117,7 @@ def create_mpc(
         kappann = Mlp(features, activations)
         nnfunc = nn2function(kappann, "kappann")
         weights = {
-            n: mpc.parameter(n, p.shape)
+            n: scmpc.parameter(n, p.shape)
             for n, p in kappann.parameters(prefix="kappann", skip_none=True)
         }
         context = cs.vvcat(normalize_nn_input(x0, pos_obs, dir_obs))
@@ -185,11 +126,11 @@ def create_mpc(
         powers = range(1, horizon + 1)
         decays = cs.hcat([cs.power(1 - gammas[i], powers) for i in range(no)])
         dcbf = h[:, 1:] - decays.T * h[:, 0]  # unrolled CBF constraints
-        slack = mpc.constraint("obs", dcbf, ">=", 0.0, soft=soft)[-1]
+        slack = scmpc.constraint_from_single("obs", dcbf, ">=", 0.0, soft=soft)[-2]
     else:
         x_ = x if bound_initial_state else x[:, 1:]
         h = env.safety_constraints(x_, pos_obs, dir_obs)
-        slack = mpc.constraint("obs", h, ">=", 0.0, soft=soft)[-1]
+        slack = scmpc.constraint_from_single("obs", h, ">=", 0.0, soft=soft)[-2]
 
     # compute stage cost
     dx = x - env.xf
@@ -213,7 +154,7 @@ def create_mpc(
         nnfunc = nn2function(pwqnn, "pwqnn")
         nnfunc = nnfunc.factory("F", nnfunc.name_in(), ("y", "grad:y:x", "hess:y:x:x"))
         weights = {
-            n: mpc.parameter(n, p.shape)
+            n: scmpc.parameter(n, p.shape)
             for n, p in pwqnn.parameters(prefix="pwqnn", skip_none=True)
         }
         output = nnfunc(x=x0 - env.xf, **weights)
@@ -226,7 +167,7 @@ def create_mpc(
         psdnn = PsdNN(in_features, psdnn_hidden_sizes, ns, "tril")
         nnfunc = nn2function(psdnn, "psdnn")
         weights = {
-            n: mpc.parameter(n, p.shape)
+            n: scmpc.parameter(n, p.shape)
             for n, p in psdnn.parameters(prefix="psdnn", skip_none=True)
         }
         L = nnfunc(x=cs.vvcat(normalize_nn_input(x0, pos_obs, dir_obs)), **weights)["y"]
@@ -237,13 +178,13 @@ def create_mpc(
         J += env.constraint_penalty * cs.sum1(cs.sum2(slack))
 
     # set the solver
-    mpc.minimize(J)
+    scmpc.minimize_from_single(J)
     solver = "ipopt"
-    mpc.init_solver(SOLVER_OPTS[solver], solver, type="nlp")
-    return mpc, kappann, pwqnn, psdnn
+    scmpc.init_solver(SOLVER_OPTS[solver], solver, type="nlp")
+    return scmpc, kappann, pwqnn, psdnn
 
 
-def get_mpc_controller(
+def get_scmpc_controller(
     *args: Any, seed: RngType = None, **kwargs: Any
 ) -> Callable[[npt.NDArray[np.floating], Env], tuple[npt.NDArray[np.floating], float]]:
     """Returns the MPC controller as a callable function.
@@ -264,9 +205,10 @@ def get_mpc_controller(
         the time it took to compute the action.
     """
     # create the MPC
-    mpc, kappann, pwqnn, psdnn = create_mpc(*args, **kwargs)
+    scmpc, kappann, pwqnn, psdnn = create_scmpc(*args, **kwargs)
 
     # group its NN parameters (if any) into a vector and assign numerical values to them
+    # TODO: accept weights from file
     sym_weights_, num_weights_ = {}, {}
     for nn, prefix in [(kappann, "kappann"), (pwqnn, "pwqnn"), (psdnn, "psdnn")]:
         if nn is None:
@@ -275,30 +217,34 @@ def get_mpc_controller(
             nn_weights = dict(nn.init_parameters(prefix=prefix, seed=seed))
         else:
             nn_weights = dict(init_parameters(nn, prefix=prefix, seed=seed))
-        sym_weights_.update((k, mpc.parameters[k]) for k in nn_weights)
+        sym_weights_.update((k, scmpc.parameters[k]) for k in nn_weights)
         num_weights_.update(nn_weights)
     sym_weights = cs.vvcat(sym_weights_.values())
     num_weights = cs.vvcat(num_weights_.values())
 
     # group the symbolical inputs of the MPC controller
-    primals = mpc.nlp.x
+    primals = scmpc.nlp.x
+    disturbances = cs.vvcat(scmpc.disturbances.values())
     args_in = (
         primals,
-        mpc.initial_states["x_0"],
-        mpc.parameters["u_prev"],
-        mpc.parameters["pos_obs"],
-        mpc.parameters["dir_obs"],
+        scmpc.initial_states["x_0"],
+        scmpc.parameters["u_prev"],
+        scmpc.parameters["pos_obs"],
+        scmpc.parameters["dir_obs"],
         sym_weights,
+        disturbances,
     )
 
     # convert the MPC object to a function (it's faster than going through csnlp)
-    func = mpc.nlp.to_function("mpc", args_in, (primals, mpc.actions["u"][:, 0]))
+    func = scmpc.nlp.to_function("scmpc", args_in, (primals, scmpc.actions["u"][:, 0]))
     last_sol = 0.0
+    horizon, n_scenarios = scmpc.prediction_horizon, scmpc.n_scenarios
 
-    def _f(x, env):
+    def _f(x, env: Env):
         nonlocal last_sol
+        d = env.sample_action_disturbance_profiles(n_scenarios, horizon).reshape(-1)
         last_sol, u_opt = func(
-            last_sol, x, env.previous_action, env.pos_obs, env.dir_obs, num_weights
+            last_sol, x, env.previous_action, env.pos_obs, env.dir_obs, num_weights, d
         )
         return u_opt.toarray().reshape(-1), func.stats()[TIME_MEAS]
 
