@@ -8,12 +8,15 @@ from warnings import warn
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
+from csnn import ReLU, Sigmoid
+from csnn.feedforward import Mlp
 from matplotlib.gridspec import GridSpec
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from env import QuadrotorEnv as Env
 
+from util.nn import nn2function
 from util.visualization import (
     load_file,
     plot_cylinder,
@@ -115,6 +118,92 @@ def plot_states_and_actions(
         ax.set_xlabel("$k$")
 
 
+def plot_safety(
+    data: Collection[dict[str, npt.NDArray[np.floating]]], *_: Any, **__: Any
+) -> None:
+    """Plots the safety of the quadrotor trajectories w.r.t. the obstacles in the
+    simulations. This plot does not distinguish between different agents as it plots
+    them all together.
+
+    Parameters
+    ----------
+    data : collection of dictionaries (str, arrays)
+        The dictionaries from different simulations, each containing the keys
+        `"actions"` and `"states"`.
+    """
+    env = Env(0)
+    n_obs = env.n_obstacles
+    safety = env.safety_constraints
+    kappann_cache = {}
+
+    _, axs = plt.subplots(n_obs, 2, constrained_layout=True, sharex=True)
+    axs_h = axs[:, 0]
+    axs_gamma = axs[:, 1]
+
+    for ax in axs[:, 0]:
+        ax.axhline(0.0, color="k", ls="--")
+    for ax in axs_gamma:
+        ax.axhline(0.0, color="k", ls="--")
+        ax.axhline(1.0, color="k", ls="--")
+
+    for i, datum in enumerate(data):
+        states = datum["states"]  # n_agents x n_ep x timesteps + 1 x ns
+        obs = datum["obstacles"]  # n_agents x n_ep x 2 (pos & dir) x 3d x n_obstacles
+        c = f"C{i}"
+        n_agents, n_ep, timesteps, ns = states.shape
+        time = np.arange(timesteps)
+
+        # flatten the first two axes as we do not distinguish between different agents
+        states_ = states.reshape(-1, *states.shape[2:])
+        obs_ = obs.reshape(-1, *obs.shape[2:])
+        for state_traj, (pos_obs, dir_obs) in zip(states_, obs_):
+            h = safety(state_traj.T, pos_obs, dir_obs).toarray()
+            for ax, h_ in zip(axs_h, h):
+                violating = h_ < 0
+                ax.plot(time, h_, c)
+                ax.plot(time[violating], h_[violating], "r", ls="none", marker="x")
+
+        # the rest is dedicated to plotting the output of the Kappa neural function
+        if "kappann_weights" in datum:
+            # we are plotting an evaluation result
+            kappann_weights = datum["kappann_weights"]
+            features = tuple(
+                w.shape[-1] for n, w in kappann_weights.items() if n.endswith(".weight")
+            ) + (n_obs,)
+            assert features[0] == ns + n_obs * 6, "Invalid input features."
+        else:
+            raise NotImplementedError("No kappann weights found in the data.")
+
+        if features in kappann_cache:
+            nnfunc = kappann_cache[features]
+        else:
+            kappann = Mlp(features, [ReLU] * (len(features) - 2) + [Sigmoid])
+            nnfunc = nn2function(kappann, "kappann")
+            kappann_cache[features] = nnfunc
+
+        n_agents = states.shape[0]
+        for a in range(n_agents):
+            kappann_weights_ = {n: w[a] for n, w in kappann_weights.items()}
+            for e in range(n_ep):
+                state_traj = states[a, e]
+                pos_obs, dir_obs = obs[a, e]
+                state_traj_norm, pos_obs_norm, dir_obs_norm = Env.normalize_context(
+                    state_traj, pos_obs, dir_obs
+                )
+                pos_obs_ = pos_obs_norm.reshape(1, -1, order="F").repeat(timesteps, 0)
+                dir_obs_ = dir_obs_norm.reshape(1, -1, order="F").repeat(timesteps, 0)
+                context = np.concatenate((state_traj_norm, pos_obs_, dir_obs_), 1)
+                gammas = nnfunc(x=context.T, **kappann_weights_)["y"].toarray()
+                for ax, gamma in zip(axs_gamma, gammas):
+                    ax.plot(time, gamma, c)
+
+    for ax in axs[-1]:
+        ax.set_xlabel("$k$")
+    for i in range(n_obs):
+        axs[i, 0].set_ylabel(f"$h_{i}$")
+        axs[i, 1].set_ylabel(f"$\\gamma_{i}$")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Plotting of simulations of the quadrotor environment.",
@@ -130,6 +219,11 @@ if __name__ == "__main__":
         "--state-action",
         action="store_true",
         help="Plots the state and action trajectories.",
+    )
+    parser.add_argument(
+        "--safety",
+        action="store_true",
+        help="Plots the safety w.r.t. obstacles for each episode.",
     )
     parser.add_argument(
         "--returns",
@@ -151,6 +245,7 @@ if __name__ == "__main__":
     if not any(
         (
             args.state_action,
+            args.safety,
             args.returns,
             args.solver_time,
             args.training,
@@ -173,6 +268,8 @@ if __name__ == "__main__":
 
     if args.all or args.state_action:
         plot_states_and_actions(data, unique_names)
+    if args.all or args.safety:
+        plot_safety(data, unique_names)
     if args.all or args.returns:
         plot_returns(data, unique_names)
     if args.all or args.solver_time:
