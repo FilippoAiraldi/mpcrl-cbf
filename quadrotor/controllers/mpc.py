@@ -174,7 +174,7 @@ def create_mpc(
         powers = range(1, horizon + 1)
         decays = cs.hcat([cs.power(1 - gammas[i], powers) for i in range(no)])
         dcbf = h[:, 1:] - decays.T * h[:, 0]  # unrolled CBF constraints
-        mpc.constraint("obs", h, ">=", 0.0, soft=soft)[-1]
+        slack = mpc.constraint("obs", dcbf, ">=", 0.0, soft=soft)[-1]
     else:
         x_ = x if bound_initial_state else x[:, 1:]
         h = env.safety_constraints(x_, pos_obs, dir_obs)
