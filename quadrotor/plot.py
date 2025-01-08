@@ -62,11 +62,10 @@ def plot_states_and_actions(
     ax_psi = fig.add_subplot(gs_actions[1, 1], sharex=ax_az)
     axs_action = (ax_az, ax_phi, ax_theta, ax_psi)
 
-    env = Env(0)
-    ns = env.ns
-    na = env.na
+    ns = Env.ns
+    na = Env.na
     for i, ax in enumerate(axs_states):
-        ax.axhline(env.xf[i], color="k", ls="--")
+        ax.axhline(Env.xf[i], color="k", ls="--")
 
     for i, datum in enumerate(data):
         actions = datum["actions"]  # n_agents x n_ep x timesteps x na
@@ -96,7 +95,7 @@ def plot_states_and_actions(
         obs = datum["obstacles"]  # n_agents x n_ep x 2 (pos & dir) x 3d x n_obstacles
         obs = obs.reshape(-1, 2, 3, obs.shape[-1])
         obs_pos, obs_dir = obs[:, 0], obs[:, 1]
-        r = env.radius_obstacles
+        r = Env.radius_obstacles
         for poss, dirs in zip(obs_pos, obs_dir):
             for pos, dir in zip(poss.T, dirs.T):
                 plot_cylinder(ax_3d, r, 20, pos, dir, color=c, alpha=0.1)
