@@ -4,7 +4,7 @@ from typing import Any, Literal
 import casadi as cs
 import numpy as np
 import numpy.typing as npt
-from controllers.mpc import get_discrete_time_dynamics, normalize_nn_input
+from controllers.mpc import get_discrete_time_dynamics
 from csnlp import Nlp
 from csnlp.wrappers import ScenarioBasedMpc
 from csnn import ReLU, Sigmoid, init_parameters
@@ -109,6 +109,7 @@ def create_scmpc(
     no = env.n_obstacles
     pos_obs = scmpc.parameter("pos_obs", (3, no))
     dir_obs = scmpc.parameter("dir_obs", (3, no))
+    context = cs.vvcat(Env.normalize_context(x0, pos_obs, dir_obs))
     kappann = None
     if dcbf:
         in_features = ns + no * 6  # 3 positions + 3 directions
@@ -120,7 +121,6 @@ def create_scmpc(
             n: scmpc.parameter(n, p.shape)
             for n, p in kappann.parameters(prefix="kappann", skip_none=True)
         }
-        context = cs.vvcat(normalize_nn_input(x0, pos_obs, dir_obs))
         gammas = nnfunc(x=context, **weights)["y"]
         h = env.safety_constraints(x, pos_obs, dir_obs)
         powers = range(1, horizon + 1)
@@ -170,7 +170,7 @@ def create_scmpc(
             n: scmpc.parameter(n, p.shape)
             for n, p in psdnn.parameters(prefix="psdnn", skip_none=True)
         }
-        L = nnfunc(x=cs.vvcat(normalize_nn_input(x0, pos_obs, dir_obs)), **weights)["y"]
+        L = nnfunc(x=context, **weights)["y"]
         J += cs.bilin(L @ L.T, dx[:, -1])
 
     # add penalty cost (if needed)

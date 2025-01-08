@@ -58,34 +58,6 @@ def get_discrete_time_dynamics(
     # )
 
 
-def normalize_nn_input(
-    x: cs.MX | npt.NDArray[np.floating],
-    pos_obs: cs.MX | npt.NDArray[np.floating],
-    dir_obs: cs.MX | npt.NDArray[np.floating],
-) -> tuple[cs.MX | npt.NDArray[np.floating], ...]:
-    """Normalizes the input to the neural network.
-
-    Parameters
-    ----------
-    x : casadi MX or numpy array
-        The quadrotor state.
-    pos_obs : casadi MX or numpy array
-        The positions of the obstacles.
-    dir_obs : casadi MX or numpy array
-        The directions of the obstacles.
-
-    Returns
-    -------
-    tuple of 3 elements (casadi MX or numpy arrays)
-        The normalized state, position of the obstacles, and direction of the obstacles.
-    """
-    return (
-        (x - Env.x_mean) / Env.x_std,
-        (pos_obs - Env.pos_obs_mean) / Env.pos_obs_std,
-        (dir_obs - Env.dir_obs_mean) / Env.dir_obs_std,
-    )
-
-
 def create_mpc(
     horizon: int,
     dcbf: bool,
@@ -168,6 +140,7 @@ def create_mpc(
     no = env.n_obstacles
     pos_obs = mpc.parameter("pos_obs", (3, no))
     dir_obs = mpc.parameter("dir_obs", (3, no))
+    context = cs.vvcat(Env.normalize_context(x0, pos_obs, dir_obs))
     kappann = None
     if dcbf:
         in_features = ns + no * 6  # 3 positions + 3 directions
@@ -179,7 +152,6 @@ def create_mpc(
             n: mpc.parameter(n, p.shape)
             for n, p in kappann.parameters(prefix="kappann", skip_none=True)
         }
-        context = cs.vvcat(normalize_nn_input(x0, pos_obs, dir_obs))
         gammas = nnfunc(x=context, **weights)["y"]
         h = env.safety_constraints(x, pos_obs, dir_obs)
         powers = range(1, horizon + 1)
@@ -229,7 +201,7 @@ def create_mpc(
             n: mpc.parameter(n, p.shape)
             for n, p in psdnn.parameters(prefix="psdnn", skip_none=True)
         }
-        L = nnfunc(x=cs.vvcat(normalize_nn_input(x0, pos_obs, dir_obs)), **weights)["y"]
+        L = nnfunc(x=context, **weights)["y"]
         J += cs.bilin(L @ L.T, dx[:, -1])
 
     # add penalty cost (if needed)
