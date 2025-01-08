@@ -215,9 +215,10 @@ def create_mpc(
     return mpc, kappann, pwqnn, psdnn
 
 
-def get_mpc_controller(
-    *args: Any, seed: RngType = None, **kwargs: Any
-) -> Callable[[npt.NDArray[np.floating], Env], tuple[npt.NDArray[np.floating], float]]:
+def get_mpc_controller(*args: Any, seed: RngType = None, **kwargs: Any) -> tuple[
+    Callable[[npt.NDArray[np.floating], Env], tuple[npt.NDArray[np.floating], float]],
+    dict[str, npt.NDArray[np.floating]] | None,
+]:
     """Returns the MPC controller as a callable function.
 
     Parameters
@@ -234,6 +235,9 @@ def get_mpc_controller(
     callable from (array-like, QuadrotorEnv) to (array-like, float)
         A controller that maps the current state to the desired action, and returns also
         the time it took to compute the action.
+    dict of str to arrays, optional
+        The numerical weights of the neural network used to learn the DCBF Kappa
+        function (used only for saving to disk for plotting).
     """
     # create the MPC
     mpc, kappann, pwqnn, psdnn = create_mpc(*args, **kwargs)
@@ -280,4 +284,10 @@ def get_mpc_controller(
 
     _f.reset = reset
 
-    return _f
+    # for plotting reasons, we also return the numerical weights of the MLP for kappa
+    kappann_weights = (
+        None
+        if kappann is None
+        else {k: v for k, v in num_weights_.items() if k.startswith("kappann")}
+    )
+    return _f, kappann_weights
