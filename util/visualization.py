@@ -7,6 +7,7 @@ import numpy.typing as npt
 from csnlp.util.io import load
 from matplotlib.axes import Axes
 from matplotlib.gridspec import GridSpec
+from mpl_toolkits.mplot3d import Axes3D
 
 
 def load_file(
@@ -193,6 +194,70 @@ def plot_single_violin(
     #             line.vertices[1, int_not_vert] = vertex
     #         else:
     #             line.vertices[:, int_not_vert] = [vertex, 2 * position - vertex]
+
+
+def plot_cylinder(
+    ax: Axes3D,
+    radius: float,
+    height: float,
+    center: npt.NDArray[np.floating],
+    direction: npt.NDArray[np.floating],
+    resolution: int = 100,
+    color: str | None = None,
+    alpha: float | None = None,
+) -> None:
+    """Plots a cylinder in 3D as a surface.
+
+    Parameters
+    ----------
+    ax : Axes3D
+        The axis to plot on.
+    radius : float
+        The radius of the cylinder.
+    height : float
+        The height of the cylinder.
+    center : array of 3 floats
+        The center of the cylinder.
+    direction : array of 3 floats
+        The direction of the cylinder axis.
+    resolution : int, optional
+        The resolution of the cylinder, by default `100`.
+    color : str | None, optional
+        The color of the cylinder, by default `None`.
+    alpha : float | None, optional
+        The transparency of the cylinder, by default `None`.
+    """
+    # generate cylinder in local coordinates
+    theta = np.linspace(0, 2 * np.pi, resolution)  # angular coordinates
+    z = np.linspace(0, height, resolution)  # height coordinates
+    theta, z = np.meshgrid(theta, z)  # meshgrid for cylinder surface
+    x = radius * np.cos(theta)
+    y = radius * np.sin(theta)
+    z = z
+
+    # normalize direction vector
+    direction = direction / np.linalg.norm(direction)
+
+    # find two perpendicular vectors to direction
+    if direction[0] == 0 and direction[1] == 0:  # Special case for vertical direction
+        perp1 = np.asarray([1, 0, 0])
+    else:
+        perp1 = np.cross(direction, [0, 0, 1])
+        perp1 /= np.linalg.norm(perp1)
+    perp2 = np.cross(direction, perp1)
+
+    # Create the rotation matrix
+    rotation_matrix = np.asarray([perp1, perp2, direction]).T
+
+    # Rotate and translate the cylinder, and reshape to original grid shape
+    x_flat, y_flat, z_flat = x.reshape(-1), y.reshape(-1), z.reshape(-1)
+    cylinder_coords = np.dot(rotation_matrix, np.asarray([x_flat, y_flat, z_flat]))
+    x_global = (cylinder_coords[0, :] + center[0]).reshape(x.shape)
+    y_global = (cylinder_coords[1, :] + center[1]).reshape(y.shape)
+    z_global = (cylinder_coords[2, :] + center[2]).reshape(z.shape)
+
+    # plot
+    ax.plot_surface(x_global, y_global, z_global, color=color, alpha=alpha)
 
 
 def plot_returns(
