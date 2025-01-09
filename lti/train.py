@@ -207,7 +207,7 @@ if __name__ == "__main__":
         type=float,
         default=(1.0, 0.997),
         nargs=2,
-        help="The strength of exploration (probability and episodic decay).",
+        help="The strength of exploration (strength and episodic decay).",
     )
     group = parser.add_argument_group("Scenario MPC (SCMPC) options")
     group.add_argument(
@@ -300,7 +300,7 @@ if __name__ == "__main__":
     }
     lr = args.lr
     eps = args.exploration_eps
-    strength = args.exploration_str
+    strength = (args.exploration_str[0] * 2 * Env.a_bound, args.exploration_str[1])
     n_episodes = args.n_episodes
     ts = args.timesteps
     reset_kwargs = {"ic": args.ic}
