@@ -73,7 +73,7 @@ def plot_states_and_actions(
     for i, datum in enumerate(data):
         actions = datum["actions"]  # n_agents x n_ep x timesteps x na
         states = datum["states"]  # n_agents x n_ep x timesteps + 1 x ns
-        print(np.mean(states, (0, 1, 2)), np.std(states, (0, 1, 2)))
+        # print(np.mean(states, (0, 1, 2)), np.std(states, (0, 1, 2)))
         c = f"C{i}"
         timesteps = actions.shape[2]
         time = np.arange(timesteps + 1)
