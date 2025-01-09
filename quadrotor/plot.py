@@ -118,6 +118,52 @@ def plot_states_and_actions(
         ax.set_xlabel("$k$")
 
 
+def plot_action_bounds(
+    data: Collection[dict[str, npt.NDArray[np.floating]]], *_: Any, **__: Any
+) -> None:
+    """Plots the tilt and tilt rate bounds of the quadrotor actions. This plot does not
+    distinguish between different agents as it plots them all together.
+
+    Parameters
+    ----------
+    data : collection of dictionaries (str, arrays)
+        The dictionaries from different simulations, each containing the keys
+        `"actions"`.
+    """
+    _, axs = plt.subplots(3, 1, constrained_layout=True, sharex=True)
+
+    na = Env.na
+    tiltmax = Env.tiltmax
+    dtiltmax = Env.dtiltmax
+    dt = Env.sampling_time
+
+    axs[0].axhline(tiltmax, color="k", ls="--")
+    for i in (1, 2):
+        axs[i].axhline(dtiltmax, color="k", ls="--")
+        axs[i].axhline(-dtiltmax, color="k", ls="--")
+
+    for i, datum in enumerate(data):
+        actions = datum["actions"]  # n_agents x n_ep x timesteps x na
+        c = f"C{i}"
+        timesteps = actions.shape[2]
+        time = np.arange(timesteps)
+
+        # flatten the first two axes as we do not distinguish between different agents
+        actions_ = actions.reshape(-1, timesteps, na)
+        for action_traj in actions_:
+            u = action_traj[:, [1, 2]]
+            u_prev = np.insert(u[:-1], 0, Env.a0[[1, 2]], 0)
+            du = (u - u_prev) / dt
+            axs[0].step(time, np.prod(np.cos(u), 1), c, where="post")
+            axs[1].step(time, du[:, 0], c, where="post")
+            axs[2].step(time, du[:, 1], c, where="post")
+
+    axs[-1].set_xlabel("$k$")
+    axs[0].set_ylabel(r"$cos(\phi) cos(\theta)$ [tilt]")
+    axs[1].set_ylabel(r"$\Delta t^{-1} (\phi_k - \phi_{k-1})$")
+    axs[2].set_ylabel(r"$\Delta t^{-1} (\theta_k - \theta_{k-1})$")
+
+
 def plot_safety(
     data: Collection[dict[str, npt.NDArray[np.floating]]], *_: Any, **__: Any
 ) -> None:
@@ -221,6 +267,9 @@ if __name__ == "__main__":
         help="Plots the state and action trajectories.",
     )
     parser.add_argument(
+        "--action-bounds", action="store_true", help="Plots the bounds of the actions."
+    )
+    parser.add_argument(
         "--safety",
         action="store_true",
         help="Plots the safety w.r.t. obstacles for each episode.",
@@ -268,6 +317,8 @@ if __name__ == "__main__":
 
     if args.all or args.state_action:
         plot_states_and_actions(data, unique_names)
+    if args.all or args.action_bounds:
+        plot_action_bounds(data, unique_names)
     if args.all or args.safety:
         plot_safety(data, unique_names)
     if args.all or args.returns:
