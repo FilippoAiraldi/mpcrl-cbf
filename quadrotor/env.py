@@ -4,80 +4,11 @@ import casadi as cs
 import gymnasium as gym
 import numpy as np
 import numpy.typing as npt
-from gymnasium.spaces.space import Space
 
 from util.loose_box import LooseBox
 
 ObsType: TypeAlias = npt.NDArray[np.floating]
 ActType: TypeAlias = npt.NDArray[np.floating]
-
-
-class QuadrotorActionSpace(Space[ActType]):
-    """Space for the actions of the quadrotor.
-
-    It constrains the actions to be within the bounds `a_lb` and `a_ub`, and the cosine
-    of the tilt angle to be greater than `tiltmax`. Additionally, it limits the change
-    in tilt angle to be within `dtiltmax`.
-
-    Parameters
-    ----------
-    a_lb : 1d array of 4 floats
-        Lower bounds for the actions.
-    a_ub : 1d array of 4 floats
-        Upper bounds for the actions.
-    tiltmax : float
-        Cosine of the maximum tilt angle.
-    dtiltmax : float
-        Maximum change in tilt angle.
-    sampling_time : float
-        Sampling time of the system.
-    """
-
-    def __init__(
-        self,
-        a_lb: ActType,
-        a_ub: ActType,
-        tiltmax: float,
-        dtiltmax: float,
-        sampling_time: float,
-        rtol: float = 1e-3,
-        atol: float = 1e-3,
-    ) -> None:
-        super().__init__((4,), np.float64)
-        self.a_lb = a_lb
-        self.a_ub = a_ub
-        self.tiltmax = tiltmax
-        self.dtiltmax = sampling_time * dtiltmax
-        self.rtol = rtol
-        self.atol = atol
-
-    def contains(self, action: ActType, previous_action: ActType) -> bool:
-        tilt = np.cos(action[1]) * np.cos(action[2])
-        diff = action[1:3] - previous_action[1:3]
-        return (
-            np.can_cast(action.dtype, self.dtype)
-            and action.shape == self.shape
-            and np.all(
-                (action >= self.a_lb)
-                | (np.isclose(action, self.a_lb, self.rtol, self.atol))
-            )
-            and np.all(
-                (action <= self.a_ub)
-                | (np.isclose(action, self.a_ub, self.rtol, self.atol))
-            )
-            and (
-                tilt >= self.tiltmax
-                or np.isclose(tilt, self.tiltmax, self.rtol, self.atol)
-            )
-            and np.all(
-                (diff >= -self.dtiltmax)
-                | (np.isclose(diff, -self.dtiltmax, self.rtol, self.atol))
-            )
-            and np.all(
-                (diff <= self.dtiltmax)
-                | (np.isclose(diff, self.dtiltmax, self.rtol, self.atol))
-            )
-        )
 
 
 class QuadrotorEnv(gym.Env[ObsType, ActType]):
@@ -135,8 +66,8 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
 
     # default action and action space bounds
     a0 = np.asarray([9.81, 0.0, 0.0, 0.0])
-    a_lb = np.asarray([0.0, -np.pi / 2, -np.pi / 2, -np.inf])
-    a_ub = np.asarray([9.18 * 5, np.pi / 2, np.pi / 2, np.inf])
+    a_lb = np.asarray([0.0, -np.pi / 2, -np.pi / 2, -np.pi])
+    a_ub = np.asarray([9.18 * 5, np.pi / 2, np.pi / 2, np.pi])
     tiltmax = np.cos(np.deg2rad(30))
     dtiltmax = 3.0
 
@@ -156,14 +87,12 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
     constraint_penalty = 1e2  # penalty for bumping into obstacles
 
     # noise
-    action_noise_bound = np.append((a_ub[:3] - a_lb[:3]) / 10.0, np.pi / 10.0)
+    action_noise_bound = (a_ub - a_lb) / 10.0
 
     def __init__(self, max_timesteps: int) -> None:
         super().__init__()
         self.observation_space = LooseBox(-np.inf, np.inf, (self.ns,), np.float64)
-        self.action_space = QuadrotorActionSpace(
-            self.a_lb, self.a_ub, self.tiltmax, self.dtiltmax, self.sampling_time
-        )
+        self.action_space = LooseBox(self.a_lb, self.a_ub, (self.na,), np.float64)
         self._max_timesteps = max_timesteps
 
         # build also the symbolic dynamics and safety constraints for 3 cylindrical
@@ -235,9 +164,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         self, action: npt.ArrayLike
     ) -> tuple[ObsType, float, bool, bool, dict[str, Any]]:
         u = np.asarray(action).reshape(self.na)
-        assert self.action_space.contains(
-            u, self._u_prev
-        ), f"invalid action {u} with previous action {self._u_prev}"
+        assert self.action_space.contains(u), f"invalid action {u}"
 
         w = self.sample_action_disturbance_profiles(1, 1)[0, 0]
         x = self._x
