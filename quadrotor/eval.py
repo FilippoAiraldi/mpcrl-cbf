@@ -272,10 +272,18 @@ if __name__ == "__main__":
         save(args.save, **data_dict, args=args.__dict__, compression="lzma")
     if args.plot or not args.save:
         import matplotlib.pyplot as plt
-        from plot import plot_returns, plot_solver_times, plot_states_and_actions
+        from plot import (
+            plot_action_bounds,
+            plot_returns,
+            plot_safety,
+            plot_solver_times,
+            plot_states_and_actions,
+        )
 
         data = [data_dict]
         plot_states_and_actions(data)
+        plot_action_bounds(data)
+        plot_safety(data)
         plot_returns(data)
         plot_solver_times(data)
         plt.show()
