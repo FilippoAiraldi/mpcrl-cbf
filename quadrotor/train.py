@@ -46,6 +46,8 @@ def get_agent(
     """
     if algorithm == "lstd-ql":
         from agents.lstd_ql import get_lstd_qlearning_agent as func
+    elif algorithm == "lstd-dpg":
+        from agents.lstd_dpg import get_lstd_dpg_agent as func
     else:
         raise ValueError(f"Unknown agent: {algorithm}")
     return func(*args, **kwargs)
