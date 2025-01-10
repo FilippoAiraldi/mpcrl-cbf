@@ -12,16 +12,7 @@ from mpcrl.core.schedulers import ExponentialScheduler
 class ConstrainedLtiEnvLstdDpgAgent(LstdDpgAgent[cs.MX, float]):
     """A LSTD determinisitc policy-gradient agent for the `ConstrainedLtiEnv` env that
     takes care of updating the samples of the disturbances affecting the prediction
-    model at each time step.
-
-    The disturbances are updated with the following rationale: the action value `Q(s,a)`
-    and state value `V(s+)` functions must be computed with the same disturbance
-    profiles (in order to have a meaning TD error estimate), but the disturbances are to
-    be shifted by one time step forward in the case of `V` (since it is computed for the
-    next time step). In practice, the samples are drawn on `on_timestep_end`, and are
-    shifted on `on_env_step`. Note that we also have to sample the disturbances at the
-    start of an episode to initialize the MPC policy for the first computation of `V`.
-    """
+    model at each time step."""
 
     def __init__(self, mpc: ScenarioBasedMpc[cs.MX], *args: Any, **kwargs: Any) -> None:
         super().__init__(mpc, *args, **kwargs)
