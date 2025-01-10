@@ -158,7 +158,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         self._x = x
         self._t = 0
         self._u_prev = self.a0
-        return x, {}
+        return x, {"pos_obs": self.pos_obs, "dir_obs": self.dir_obs}
 
     def step(
         self, action: npt.ArrayLike
