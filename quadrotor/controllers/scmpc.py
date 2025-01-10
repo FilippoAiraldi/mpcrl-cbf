@@ -219,17 +219,25 @@ def get_scmpc_controller(
     scmpc, kappann, pwqnn, psdnn = create_scmpc(*args, **kwargs)
 
     # group its NN parameters (if any) into a vector and assign numerical values to them
-    # TODO: accept weights from file
     sym_weights_, num_weights_ = {}, {}
-    for nn, prefix in [(kappann, "kappann"), (pwqnn, "pwqnn"), (psdnn, "psdnn")]:
-        if nn is None:
-            continue
-        if hasattr(nn, "init_parameters"):
-            nn_weights = dict(nn.init_parameters(prefix=prefix, seed=seed))
-        else:
-            nn_weights = dict(init_parameters(nn, prefix=prefix, seed=seed))
-        sym_weights_.update((k, scmpc.parameters[k]) for k in nn_weights)
-        num_weights_.update(nn_weights)
+    if nn_weights is not None:
+        # load numerical values from given weights
+        for n, weight in nn_weights.items():
+            if n in scmpc.parameters:
+                sym_weights_[n] = scmpc.parameters[n]
+                num_weights_[n] = weight
+    else:
+        # initialize weights randomly
+        for nn, prefix in [(kappann, "kappann"), (pwqnn, "pwqnn"), (psdnn, "psdnn")]:
+            if nn is None:
+                continue
+            nn_weights_ = dict(
+                nn.init_parameters(prefix=prefix, seed=seed)
+                if hasattr(nn, "init_parameters")
+                else init_parameters(nn, prefix=prefix, seed=seed)
+            )
+            sym_weights_.update((k, scmpc.parameters[k]) for k in nn_weights_)
+            num_weights_.update(nn_weights_)
     sym_weights = cs.vvcat(sym_weights_.values())
     num_weights = cs.vvcat(num_weights_.values())
 

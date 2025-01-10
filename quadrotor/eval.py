@@ -1,5 +1,5 @@
 import sys
-from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentError, ArgumentParser
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
@@ -188,6 +188,14 @@ if __name__ == "__main__":
         default=100,
         help="Number of timesteps per each simulation.",
     )
+    group.add_argument(
+        "--from-file",
+        type=str,
+        default="",
+        help="Loads a trained learning-based controller from training results' file, "
+        "instead of randomly initializing it. If set, `--n-ctrl` is overwritten to the "
+        "number of controllers in the file. Only supported for `controller=scmpc`.",
+    )
     group = parser.add_argument_group("Storing and plotting options")
     group.add_argument(
         "--save",
@@ -208,6 +216,24 @@ if __name__ == "__main__":
     args = parser.parse_args()
     args.terminal_cost = set(args.terminal_cost)
 
+    # if a training file is specified, load the last learnable weights from it and
+    # overwrite the number of controllers
+    if args.from_file:
+        if args.controller != "scmpc":
+            raise ArgumentError("Only SCMPC controllers can be loaded from file.")
+
+        from csnlp.util.io import load
+
+        data = load(args.from_file)
+        if "updates_history" not in data:
+            raise ArgumentError("No learning history found in the file.")
+        params = data["updates_history"]
+        args.n_ctrl = next(iter(params.values())).shape[0]
+        print(f"Loaded {args.n_ctrl} controllers from {args.from_file}.")
+        weights = [{n: w[i, -1] for n, w in params.items()} for i in range(args.n_ctrl)]
+    else:
+        weights = [None] * args.n_ctrl
+
     # prepare arguments to the simulation
     controller = args.controller
     controller_kwargs = {
@@ -225,9 +251,9 @@ if __name__ == "__main__":
     # run the simulations (possibly in parallel asynchronously)
     data = Parallel(n_jobs=args.n_jobs, verbose=10, return_as="generator_unordered")(
         delayed(simulate_controller_once)(
-            controller, controller_kwargs, n_eval, ts, seed
+            controller, controller_kwargs, n_eval, ts, weights_, seed
         )
-        for seed in seeds
+        for weights_, seed in zip(weights, seeds)
     )
 
     # congregate data all together - kappann_weights is a dictionary, so requires
