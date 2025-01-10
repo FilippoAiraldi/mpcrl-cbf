@@ -210,16 +210,21 @@ def plot_safety(
                 ax.plot(time[violating], h_[violating], "r", ls="none", marker="x")
 
         # the rest is dedicated to plotting the output of the Kappa neural function
-        if "kappann_weights" in datum:
-            # we are plotting an evaluation result
-            kappann_weights = datum["kappann_weights"]
-            features = tuple(
-                w.shape[-1] for n, w in kappann_weights.items() if n.endswith(".weight")
-            ) + (n_obs,)
-            assert features[0] == ns + n_obs * 6, "Invalid input features."
-        else:
-            raise NotImplementedError("No kappann weights found in the data.")
+        is_eval = "kappann_weights" in datum
+        kappann_weights = (
+            datum["kappann_weights"]
+            if is_eval
+            else {
+                n: w
+                for n, w in datum["updates_history"].items()
+                if n.startswith("kappann.")
+            }
+        )
 
+        features = tuple(
+            w.shape[-1] for n, w in kappann_weights.items() if n.endswith(".weight")
+        ) + (n_obs,)
+        assert features[0] == ns + n_obs * 6, "Invalid input features."
         if features in kappann_cache:
             nnfunc = kappann_cache[features]
         else:
@@ -229,8 +234,13 @@ def plot_safety(
 
         n_agents = states.shape[0]
         for a in range(n_agents):
-            kappann_weights_ = {n: w[a] for n, w in kappann_weights.items()}
+            if is_eval:
+                kappann_weights_ = {n: w[a] for n, w in kappann_weights.items()}
+
             for e in range(n_ep):
+                if not is_eval:
+                    kappann_weights_ = {n: w[a, e] for n, w in kappann_weights.items()}
+
                 state_traj = states[a, e]
                 pos_obs, dir_obs = obs[a, e]
                 state_traj_norm, pos_obs_norm, dir_obs_norm = Env.normalize_context(
