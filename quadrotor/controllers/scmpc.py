@@ -15,6 +15,7 @@ from mpcrl.util.seeding import RngType
 from scipy.linalg import solve_discrete_are as dlqr
 
 from util.defaults import (
+    DCBF_GAMMA,
     KAPPANN_HIDDEN,
     PSDNN_HIDDEN,
     PWQNN_HIDDEN,
@@ -28,6 +29,7 @@ def create_scmpc(
     horizon: int,
     scenarios: int,
     dcbf: bool,
+    use_kappann: bool,
     soft: bool,
     bound_initial_state: bool,
     terminal_cost: set[Literal["dlqr", "pwqnn", "psdnn"]],
@@ -49,6 +51,9 @@ def create_scmpc(
     dcbf : bool
         Whether to use discrete-time control barrier functions to enforce safety
         constraints or not.
+    use_kappann : bool
+        Whether to use a neural network to compute the class Kappa function for the CBF.
+        If `False`, a constant is used instead. Only used when `dcbf=True`.
     soft : bool
         Whether to impose soft constraints on the states or not. If not, note that the
         optimization problem may become infeasible.
@@ -112,20 +117,24 @@ def create_scmpc(
     context = cs.vvcat(Env.normalize_context(x0, pos_obs, dir_obs))
     kappann = None
     if dcbf:
-        in_features = ns + no * 6  # 3 positions + 3 directions
-        features = [in_features, *kappann_hidden_size, no]
-        activations = [ReLU] * len(kappann_hidden_size) + [Sigmoid]
-        kappann = Mlp(features, activations)
-        nnfunc = nn2function(kappann, "kappann")
-        weights = {
-            n: scmpc.parameter(n, p.shape)
-            for n, p in kappann.parameters(prefix="kappann", skip_none=True)
-        }
-        gammas = nnfunc(x=context, **weights)["y"]
         h = env.safety_constraints(x, pos_obs, dir_obs)
-        powers = range(1, horizon + 1)
-        decays = cs.hcat([cs.power(1 - gammas[i], powers) for i in range(no)])
-        dcbf = h[:, 1:] - decays.T * h[:, 0]  # unrolled CBF constraints
+        if use_kappann:
+            in_features = ns + no * 6  # 3 positions + 3 directions
+            features = [in_features, *kappann_hidden_size, no]
+            activations = [ReLU] * len(kappann_hidden_size) + [Sigmoid]
+            kappann = Mlp(features, activations)
+            nnfunc = nn2function(kappann, "kappann")
+            weights = {
+                n: scmpc.parameter(n, p.shape)
+                for n, p in kappann.parameters(prefix="kappann", skip_none=True)
+            }
+            gammas = nnfunc(x=context, **weights)["y"]
+            powers = range(1, horizon + 1)
+            decays = cs.hcat([cs.power(1 - gammas[i], powers) for i in range(no)])
+            dcbf = h[:, 1:] - decays.T * h[:, 0]  # unrolled CBF constraints
+        else:
+            decays = cs.power(1 - DCBF_GAMMA, range(1, horizon + 1))
+            dcbf = h[:, 1:] - h[:, 0] @ decays.T
         slack = scmpc.constraint_from_single("obs", dcbf, ">=", 0.0, soft=soft)[-2]
     else:
         x_ = x if bound_initial_state else x[:, 1:]

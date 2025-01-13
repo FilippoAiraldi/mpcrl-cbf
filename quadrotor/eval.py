@@ -150,6 +150,11 @@ if __name__ == "__main__":
         help="Whether to use discrete-time CBF constraints in the MPC controller.",
     )
     group.add_argument(
+        "--use-kappann",
+        action="store_true",
+        help="Whether to use an NN as the CBF class Kappa function.",
+    )
+    group.add_argument(
         "--soft",
         action="store_true",
         help="Whether to use soft constraints in the MPC controller.",
@@ -239,6 +244,7 @@ if __name__ == "__main__":
     controller_kwargs = {
         "horizon": args.horizon,
         "dcbf": args.dcbf,
+        "use_kappann": args.use_kappann,
         "soft": args.soft,
         "bound_initial_state": args.bound_initial_state,
         "terminal_cost": args.terminal_cost,
@@ -257,13 +263,16 @@ if __name__ == "__main__":
     )
 
     # congregate data all together - kappann_weights is a dictionary, so requires
-    # further attention
+    # further attention - remove it if not used
     keys = ("cost", "actions", "states", "sol_times", "obstacles", "kappann_weights")
     data_dict = dict(zip(keys, map(np.asarray, zip(*data))))
-    wnames = data_dict["kappann_weights"][0].keys()
-    data_dict["kappann_weights"] = {
-        n: np.asarray([d[n] for d in data_dict["kappann_weights"]]) for n in wnames
-    }
+    if args.use_kappann:
+        wnames = data_dict["kappann_weights"][0].keys()
+        data_dict["kappann_weights"] = {
+            n: np.asarray([d[n] for d in data_dict["kappann_weights"]]) for n in wnames
+        }
+    else:
+        data_dict.pop("kappann_weights")
 
     # finally, store and plot the results. If no filepath is passed, always plot
     if args.save:

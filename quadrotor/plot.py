@@ -182,15 +182,20 @@ def plot_safety(
     safety = env.safety_constraints
     kappann_cache = {}
 
-    _, axs = plt.subplots(n_obs, 2, constrained_layout=True, sharex=True)
-    axs_h = axs[:, 0]
-    axs_gamma = axs[:, 1]
+    n_cols = (
+        2 if any("kappann_weights" in d or "updates_history" in d for d in data) else 1
+    )
+    _, axs = plt.subplots(n_obs, n_cols, constrained_layout=True, sharex=True)
+    axs = np.reshape(axs, (n_obs, n_cols))
 
+    axs_h = axs[:, 0]
     for ax in axs[:, 0]:
         ax.axhline(0.0, color="k", ls="--")
-    for ax in axs_gamma:
-        ax.axhline(0.0, color="k", ls="--")
-        ax.axhline(1.0, color="k", ls="--")
+    if n_cols > 1:
+        axs_gamma = axs[:, 1]
+        for ax in axs_gamma:
+            ax.axhline(0.0, color="k", ls="--")
+            ax.axhline(1.0, color="k", ls="--")
 
     for i, datum in enumerate(data):
         states = datum["states"]  # n_agents x n_ep x timesteps + 1 x ns
@@ -210,6 +215,8 @@ def plot_safety(
                 ax.plot(time[violating], h_[violating], "r", ls="none", marker="x")
 
         # the rest is dedicated to plotting the output of the Kappa neural function
+        if "kappann_weights" not in datum and "updates_history" not in datum:
+            continue
         is_eval = "kappann_weights" in datum
         kappann_weights = (
             datum["kappann_weights"]
@@ -257,7 +264,8 @@ def plot_safety(
         ax.set_xlabel("$k$")
     for i in range(n_obs):
         axs[i, 0].set_ylabel(f"$h_{i}$")
-        axs[i, 1].set_ylabel(f"$\\gamma_{i}$")
+        if n_cols > 1:
+            axs[i, 1].set_ylabel(f"$\\gamma_{i}$")
 
 
 if __name__ == "__main__":
