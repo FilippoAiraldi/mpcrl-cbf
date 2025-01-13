@@ -11,6 +11,7 @@ import numpy.typing as npt
 from csnn import ReLU, Sigmoid
 from csnn.feedforward import Mlp
 from matplotlib.gridspec import GridSpec
+from scipy.stats import sem
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
@@ -165,7 +166,10 @@ def plot_action_bounds(
 
 
 def plot_safety(
-    data: Collection[dict[str, npt.NDArray[np.floating]]], *_: Any, **__: Any
+    data: Collection[dict[str, npt.NDArray[np.floating]]],
+    names: Collection[str] | None = None,
+    *_: Any,
+    **__: Any,
 ) -> None:
     """Plots the safety of the quadrotor trajectories w.r.t. the obstacles in the
     simulations. This plot does not distinguish between different agents as it plots
@@ -176,27 +180,30 @@ def plot_safety(
     data : collection of dictionaries (str, arrays)
         The dictionaries from different simulations, each containing the keys
         `"actions"` and `"states"`.
+    names : collection of str, optional
+        The names of the simulations to use in the plot.
     """
     env = Env(0)
     n_obs = env.n_obstacles
     safety = env.safety_constraints
     kappann_cache = {}
 
-    n_cols = (
-        2 if any("kappann_weights" in d or "updates_history" in d for d in data) else 1
-    )
-    _, axs = plt.subplots(n_obs, n_cols, constrained_layout=True, sharex=True)
-    axs = np.reshape(axs, (n_obs, n_cols))
+    plot_gamma = any("kappann_weights" in d or "updates_history" in d for d in data)
+    fig = plt.figure(constrained_layout=True)
+    gs = GridSpec(n_obs + 1, 2 if plot_gamma else 1, fig)
+    axs_h = [fig.add_subplot(gs[i, 0]) for i in range(n_obs)]
+    if plot_gamma:
+        axs_gamma = [fig.add_subplot(gs[i, 1]) for i in range(n_obs)]
+    ax_viol_prob = fig.add_subplot(gs[-1, :])
 
-    axs_h = axs[:, 0]
-    for ax in axs[:, 0]:
+    for ax in axs_h:
         ax.axhline(0.0, color="k", ls="--")
-    if n_cols > 1:
-        axs_gamma = axs[:, 1]
+    if plot_gamma:
         for ax in axs_gamma:
             ax.axhline(0.0, color="k", ls="--")
             ax.axhline(1.0, color="k", ls="--")
 
+    violations_data = []
     for i, datum in enumerate(data):
         states = datum["states"]  # n_agents x n_ep x timesteps + 1 x ns
         obs = datum["obstacles"]  # n_agents x n_ep x 2 (pos & dir) x 3d x n_obstacles
@@ -204,15 +211,22 @@ def plot_safety(
         n_agents, n_ep, timesteps, ns = states.shape
         time = np.arange(timesteps)
 
-        # flatten the first two axes as we do not distinguish between different agents
-        states_ = states.reshape(-1, *states.shape[2:])
-        obs_ = obs.reshape(-1, *obs.shape[2:])
-        for state_traj, (pos_obs, dir_obs) in zip(states_, obs_):
-            h = safety(state_traj.T, pos_obs, dir_obs).toarray()
-            for ax, h_ in zip(axs_h, h):
-                violating = h_ < 0
-                ax.plot(time, h_, c)
-                ax.plot(time[violating], h_[violating], "r", ls="none", marker="x")
+        violations = np.empty((n_agents, n_ep, timesteps), dtype=np.bool)
+        for n_a in range(n_agents):
+            for n_e in range(n_ep):
+                state_traj = states[n_a, n_e]
+                pos_obs, dir_obs = obs[n_a, n_e]
+                h = safety(state_traj.T, pos_obs, dir_obs).toarray()
+                for ax, h_ in zip(axs_h, h):
+                    violating = h_ < 0
+                    ax.plot(time, h_, c)
+                    ax.plot(time[violating], h_[violating], "r", ls="none", marker="x")
+                    violations[n_a, n_e] = violating.any(0)
+
+        prob_violations = violations.mean((1, 2)) * 100.0
+        mean = prob_violations.mean(0)
+        se = sem(prob_violations)
+        violations_data.append((mean, se))
 
         # the rest is dedicated to plotting the output of the Kappa neural function
         if "kappann_weights" not in datum and "updates_history" not in datum:
@@ -239,7 +253,6 @@ def plot_safety(
             nnfunc = nn2function(kappann, "kappann")
             kappann_cache[features] = nnfunc
 
-        n_agents = states.shape[0]
         for a in range(n_agents):
             if is_eval:
                 kappann_weights_ = {n: w[a] for n, w in kappann_weights.items()}
@@ -260,12 +273,17 @@ def plot_safety(
                 for ax, gamma in zip(axs_gamma, gammas):
                     ax.plot(time, gamma, c)
 
-    for ax in axs[-1]:
-        ax.set_xlabel("$k$")
-    for i in range(n_obs):
-        axs[i, 0].set_ylabel(f"$h_{i}$")
-        if n_cols > 1:
-            axs[i, 1].set_ylabel(f"$\\gamma_{i}$")
+    violations_mean, violations_se = zip(*violations_data)
+    ax_viol_prob.bar(names, violations_mean, yerr=violations_se, capsize=5)
+
+    for ax in axs_h:
+        ax.set_ylabel(f"$h_{i}$")
+    axs_h[-1].set_xlabel("$k$")
+    if plot_gamma:
+        for ax in axs_gamma:
+            ax.set_ylabel(f"$\\gamma_{i}$")
+        axs_gamma[-1].set_xlabel("$k$")
+    ax_viol_prob.set_ylabel("Num. of Violations (%)")
 
 
 if __name__ == "__main__":
