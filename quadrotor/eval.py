@@ -190,7 +190,7 @@ if __name__ == "__main__":
     group.add_argument(
         "--timesteps",
         type=int,
-        default=100,
+        default=125,
         help="Number of timesteps per each simulation.",
     )
     group.add_argument(

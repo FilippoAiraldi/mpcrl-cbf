@@ -278,7 +278,7 @@ if __name__ == "__main__":
     group.add_argument(
         "--timesteps",
         type=int,
-        default=100,  # TODO: tune this - and retune x_mean and x_std
+        default=125,
         help="Number of timesteps per each training episode.",
     )
     group = parser.add_argument_group("Storing and plotting options")
