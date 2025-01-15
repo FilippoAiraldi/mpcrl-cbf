@@ -123,7 +123,6 @@ def train_one_agent(
     # initialize learnable parameters
     sym_pars = scmpc.parameters
     learnable_pars_: list[LearnableParameter] = []
-    # TODO: initialize weights for other neural networks
     if kappann is not None:
         learnable_pars_.extend(
             LearnableParameter(name, weight.shape, weight, sym=sym_pars[name])
@@ -146,6 +145,7 @@ def train_one_agent(
             for name, weight in init_parameters(psdnn, prefix="psdnn", seed=rng)
         )
     learnable_pars = LearnableParametersDict(learnable_pars_)
+    assert learnable_pars.size > 0, "No learnable parameters found."
 
     # instantiate and wrap the agent
     agent = get_agent(
@@ -244,6 +244,11 @@ if __name__ == "__main__":
         help="Whether to use discrete-time CBF constraints in the SCMPC controller.",
     )
     group.add_argument(
+        "--use-kappann",
+        action="store_true",
+        help="Whether to use an NN as the CBF class Kappa function.",
+    )
+    group.add_argument(
         "--soft",
         action="store_true",
         help="Whether to use soft constraints in the SCMPC controller.",
@@ -301,6 +306,7 @@ if __name__ == "__main__":
     scmpc_kwargs = {
         "horizon": args.horizon,
         "dcbf": args.dcbf,
+        "use_kappann": args.use_kappann,
         "soft": args.soft,
         "bound_initial_state": args.bound_initial_state,
         "terminal_cost": args.terminal_cost,
