@@ -217,11 +217,11 @@ def plot_safety(
                 state_traj = states[n_a, n_e]
                 pos_obs, dir_obs = obs[n_a, n_e]
                 h = safety(state_traj.T, pos_obs, dir_obs).toarray()
-                for ax, h_ in zip(axs_h, h):
-                    violating = h_ < 0
+                violating = h < 0
+                for ax, h_, viol_ in zip(axs_h, h, violating):
                     ax.plot(time, h_, c)
-                    ax.plot(time[violating], h_[violating], "r", ls="none", marker="x")
-                    violations[n_a, n_e] = violating.any(0)
+                    ax.plot(time[viol_], h_[viol_], "r", ls="none", marker="x", ms=3)
+                violations[n_a, n_e] = violating.any(0)
 
         prob_violations = violations.mean((1, 2)) * 100.0
         mean = prob_violations.mean(0)
