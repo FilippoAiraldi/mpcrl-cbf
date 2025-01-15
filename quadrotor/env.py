@@ -84,7 +84,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
     dir_obs_mean = np.asarray([[0, 0, 1], [0, 1, 0], [0, 0, 1]], dtype=float).T
     dir_obs_mean /= np.linalg.norm(dir_obs_mean, axis=0)
     dir_obs_std = 0.1
-    constraint_penalty = 1e2  # penalty for bumping into obstacles
+    constraint_penalty = 1e3  # penalty for bumping into obstacles
 
     # noise
     action_noise_bound = (a_ub - a_lb) / 10.0

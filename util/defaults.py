@@ -17,7 +17,12 @@ SOLVER_OPTS = {
         "bound_consistency": True,
         "calc_lam_p": False,
         "calc_lam_x": True,
-        "ipopt": {"max_iter": 500, "print_level": 0, "sb": "yes"},
+        "ipopt": {
+            "max_iter": 500,
+            "print_level": 0,
+            "sb": "yes",
+            "linear_solver": "ma27",
+        },
     },
     "qpoases": {
         "error_on_fail": False,
