@@ -204,7 +204,7 @@ if __name__ == "__main__":
         choices=("lstd-ql", "lstd-dpg"),
         help="The algorithm to use for training the RL agents.",
     )
-    group = parser.add_argument_group("RL algorithm options")  # TODO: tune all these
+    group = parser.add_argument_group("RL algorithm options")
     group.add_argument(
         "--lr",
         type=float,

@@ -266,7 +266,7 @@ if __name__ == "__main__":
     # further attention - remove it if not used
     keys = ("cost", "actions", "states", "sol_times", "obstacles", "kappann_weights")
     data_dict = dict(zip(keys, map(np.asarray, zip(*data))))
-    if args.use_kappann:
+    if args.dcbf and args.use_kappann:
         wnames = data_dict["kappann_weights"][0].keys()
         data_dict["kappann_weights"] = {
             n: np.asarray([d[n] for d in data_dict["kappann_weights"]]) for n in wnames
