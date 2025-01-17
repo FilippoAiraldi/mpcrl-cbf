@@ -133,10 +133,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         self, *, seed: int | None = None, options: dict[str, Any] | None = None
     ) -> tuple[ObsType, dict[str, Any]]:
         super().reset(seed=seed, options=options)
-        if options is None:
-            options = {}
-
-        if "ic" in options:
+        if options is not None and "ic" in options:
             x = np.asarray(options["ic"])
             assert self.observation_space.contains(x), f"invalid initial state {x}"
         else:

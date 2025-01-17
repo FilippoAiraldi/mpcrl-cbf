@@ -19,7 +19,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from controllers.scmpc import create_scmpc
 from env import QuadrotorEnv as Env
 
-from util.wrappers import RecordSolverTime, SuppressOutput
+from util.wrappers import RecordSolverTime
 
 
 def get_agent(
@@ -107,7 +107,7 @@ def train_one_agent(
          respectively)
          - an array containing the obstacles positions and direction for each episode
          - a dict containing the history of updates to the learnable parameters
-         - an array of TD errors (only for the `"lstd-ql"` algorithm).
+         - an array of TD errors (if `"lstd-ql"`) or policy gradients (if `"lstd-dpg"`).
     """
     # instantiate the environment
     rng = np.random.default_rng(seed)
@@ -117,8 +117,6 @@ def train_one_agent(
     set_sym_type("MX")
     scmpc, kappann, pwqnn, psdnn = create_scmpc(**scmpc_kwargs, env=env)
     scmpc = RecordSolverTime(scmpc)
-    if scmpc.unwrapped._solver_plugin == "qpoases":
-        scmpc = SuppressOutput(scmpc)
 
     # initialize learnable parameters
     sym_pars = scmpc.parameters

@@ -332,8 +332,8 @@ def plot_solver_times(
         else:
             assert sol_times_flat.ndim == 2, "Unexpected shape of `sol_times_flat`"
             sol_times_V, sol_times_Q = sol_times_flat.T
-            for side, times in (("low", sol_times_V), ("high", sol_times_Q)):
-                plot_single_violin(ax, i, times, side=side, **kw)
+            plot_single_violin(ax, i, sol_times_V, side="low", **kw)
+            plot_single_violin(ax, i, sol_times_Q, side="high", **kw)
 
     ax.set_xticks(range(len(data)))
     if names is not None:
