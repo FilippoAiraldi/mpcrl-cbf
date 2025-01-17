@@ -79,6 +79,14 @@ def get_lstd_qlearning_agent(
     exploration_strength: tuple[npt.NDArray[np.floating], float],
     name: str,
 ) -> QuadrotorEnvEnvLstdQLearningAgent:
+    exploration = (
+        None
+        if exploration_epsilon[0] <= 0 or np.all(exploration_strength[0] <= 0)
+        else EpsilonGreedyExploration(
+            epsilon=ExponentialScheduler(*exploration_epsilon),
+            strength=ExponentialScheduler(*exploration_strength),
+        )
+    )
     return QuadrotorEnvEnvLstdQLearningAgent(
         mpc=scmpc,
         discount_factor=1.0,
@@ -88,10 +96,7 @@ def get_lstd_qlearning_agent(
         hessian_type="none",
         learnable_parameters=learnable_parameters,
         fixed_parameters={},
-        exploration=EpsilonGreedyExploration(
-            epsilon=ExponentialScheduler(*exploration_epsilon),
-            strength=ExponentialScheduler(*exploration_strength),
-        ),
+        exploration=exploration,
         record_td_errors=True,
         remove_bounds_on_initial_action=True,
         name=name,
