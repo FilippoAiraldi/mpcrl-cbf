@@ -156,6 +156,7 @@ def train_one_agent(
         exploration_strength=exploration_strength,
         name=f"{algorithm}_{n}",
     )
+    agent.V.set_learning_agent(agent)  # gimmick to save solver times only for training
     agent = RecordUpdates(agent)
     agent = Log(agent, level=DEBUG, log_frequencies={"on_episode_end": 100})
 

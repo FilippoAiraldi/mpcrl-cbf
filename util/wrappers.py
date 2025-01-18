@@ -4,6 +4,7 @@ from typing import Any, TypeVar
 
 import casadi as cs
 from csnlp import Nlp, wrappers
+from mpcrl import LearningAgent
 
 from util.defaults import TIME_MEAS
 
@@ -49,8 +50,14 @@ class RecordSolverTime(wrappers.Wrapper[SymType]):
     def __init__(self, nlp: Nlp[SymType]) -> None:
         super().__init__(nlp)
         self.solver_time: list[float] = []
+        self._agent: LearningAgent | None = None
+
+    def set_learning_agent(self, agent: LearningAgent) -> None:
+        """Optionally set the agent to record times only when training."""
+        self._agent = agent
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         sol = self.nlp.__call__(*args, **kwargs)
-        self.solver_time.append(sol.stats[TIME_MEAS])
+        if self._agent is None or self._agent.unwrapped._is_training:
+            self.solver_time.append(sol.stats[TIME_MEAS])
         return sol
