@@ -11,7 +11,7 @@ from csnn import init_parameters, set_sym_type
 from joblib import Parallel, delayed
 from mpcrl import LearnableParameter, LearnableParametersDict, RlLearningAgent
 from mpcrl.util.seeding import RngType
-from mpcrl.wrappers.agents import Log, RecordUpdates
+from mpcrl.wrappers.agents import Evaluate, Log, RecordUpdates
 from mpcrl.wrappers.envs import MonitorEpisodes, MonitorInfos
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
@@ -99,7 +99,7 @@ def train_one_agent(
 
     Returns
     -------
-    5 float arrays, 1 dict of float arrays, 1 float array
+    6 float arrays, 1 dict of float arrays, 1 float array
         Returns the following objects in order:
          - an array of the total cost for each training episode
          - two arrays containing the actions and states trajectories respectively
@@ -107,6 +107,7 @@ def train_one_agent(
          respectively)
          - an array containing the obstacles positions and direction for each episode
          - a dict containing the history of updates to the learnable parameters
+         - an array of the evaluation returns for each evaluation episode
          - an array of TD errors (if `"lstd-ql"`) or policy gradients (if `"lstd-dpg"`).
     """
     # instantiate the environment
@@ -159,6 +160,16 @@ def train_one_agent(
     agent.V.set_learning_agent(agent)  # gimmick to save solver times only for training
     agent = RecordUpdates(agent)
     agent = Log(agent, level=DEBUG, log_frequencies={"on_episode_end": 100})
+    agent = Evaluate(
+        agent,
+        eval_env=Env(timesteps),
+        hook="on_episode_end",
+        frequency=episodes // 10,
+        n_eval_episodes=episodes // 50,
+        eval_immediately=True,
+        seed=rng,
+        raises=False,
+    )
 
     # launch training
     env = MonitorInfos(env, deque_size=episodes)
@@ -172,6 +183,7 @@ def train_one_agent(
     infos = env.env.finalized_reset_infos()
     obstacles = np.stack((infos["pos_obs"], infos["dir_obs"]), 1)
     updates_history = {n: np.asarray(par) for n, par in agent.updates_history.items()}
+    evals = np.asarray(agent.eval_returns)
     others = []
     if algorithm == "lstd-ql":
         sol_times = np.stack(
@@ -187,7 +199,7 @@ def train_one_agent(
         others.append(
             np.reshape(agent.policy_gradients, (n_episodes, learnable_pars.size)),
         )
-    return R, U, X, sol_times, obstacles, updates_history, *others
+    return R, U, X, sol_times, obstacles, updates_history, evals, *others
 
 
 if __name__ == "__main__":
@@ -331,7 +343,15 @@ if __name__ == "__main__":
 
     # congregate data all together - updates_history is a dictionary, so requires
     # further attention
-    keys = ["cost", "actions", "states", "sol_times", "obstacles", "updates_history"]
+    keys = [
+        "cost",
+        "actions",
+        "states",
+        "sol_times",
+        "obstacles",
+        "updates_history",
+        "evals",
+    ]
     if algo == "lstd-ql":
         keys.append("td_errors")
     elif algo == "lstd-dpg":
