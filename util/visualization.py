@@ -358,7 +358,8 @@ def plot_training(
     ----------
     data : collection of dictionaries (str, arrays)
         The dictionaries from different simulations, each potentially containing the
-        keys `"updates_history"`, `"td_errors"`, or `"policy_performances"`.
+        keys `"updates_history"`, `"td_errors"`, or `"policy_performances"`, and
+        `"evals"`.
     """
     param_names = set()
     for datum in data:
@@ -366,26 +367,28 @@ def plot_training(
             param_names.update(datum["updates_history"].keys())
     any_td = any("td_errors" in d for d in data)
     any_pg = any("policy_gradients" in d for d in data)
-    any_other = any_td or any_pg
+    any_eval = any("evals" in d for d in data)
     n = len(param_names)
-    if n == 0 and not any_other:
+    if n == 0 and not any_td and not any_pg and not any_eval:
         return
 
     fig = plt.figure(constrained_layout=True)
     ncols = int(np.round(np.sqrt(n)))
     nrows = int(np.ceil(n / ncols))
-    gs = GridSpec(nrows + int(any_other), ncols, fig)
-    if any_other:
-        offset = 1
+    gs = GridSpec(nrows + int(any_td or any_pg) + int(any_eval), ncols, fig)
+    offset = 0
+    if any_td or any_pg:
         if any_td and any_pg:
-            ax_td = fig.add_subplot(gs[0, :])
+            ax_td = fig.add_subplot(gs[offset, :])
             ax_pg = ax_td.twinx()
         elif any_td:
-            ax_td = fig.add_subplot(gs[0, :])
+            ax_td = fig.add_subplot(gs[offset, :])
         else:
-            ax_pg = fig.add_subplot(gs[0, :])
-    else:
-        offset = 0
+            ax_pg = fig.add_subplot(gs[offset, :])
+        offset += 1
+    if any_eval:
+        ax_eval = fig.add_subplot(gs[offset, :])
+        offset += 1
     param_names = sorted(param_names)
     start = nrows * ncols - n
     ax_par_first = fig.add_subplot(gs[start // ncols + offset, start % ncols])
@@ -410,6 +413,12 @@ def plot_training(
             updates = np.linspace(0, n_ep - 1, grads.shape[1])
             plot_population(ax_pg, updates, norms, axis=0, color=c, log=True)
 
+        if "evals" in datum:
+            eval_returns = datum["evals"]  # n_agents x n_evals x n_eval_ep
+            n_ep = datum["cost"].shape[1]  # n_agents x n_ep
+            episodes = np.linspace(0, n_ep - 1, eval_returns.shape[1])
+            plot_population(ax_eval, episodes, eval_returns.mean(2), 0, use_sem=True)
+
         if "updates_history" in datum:
             for name, param in datum["updates_history"].items():
                 updates = np.arange(param.shape[1])
@@ -428,6 +437,9 @@ def plot_training(
     if any_pg:
         ax_pg.set_xlabel("Episode")
         ax_pg.set_ylabel(r"$\| \nabla_\theta J(\pi_\theta) \|_2$")
+    if any_eval:
+        ax_eval.set_xlabel("Episode")
+        ax_eval.set_ylabel("Eval. Return")
     for name, ax in ax_pars.items():
         ax.set_xlabel("Episode")
         ax.set_ylabel(name)
