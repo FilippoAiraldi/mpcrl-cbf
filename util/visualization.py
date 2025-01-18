@@ -8,6 +8,7 @@ from csnlp.util.io import load
 from matplotlib.axes import Axes
 from matplotlib.gridspec import GridSpec
 from mpl_toolkits.mplot3d import Axes3D
+from scipy.stats import sem
 
 
 def load_file(
@@ -38,6 +39,7 @@ def plot_population(
     y: npt.ArrayLike,
     axis: int | tuple[int, ...],
     use_quartiles: bool = False,
+    use_sem: bool = False,
     log: bool = False,
     clip_min: float | None = None,
     marker: str | None = None,
@@ -64,6 +66,9 @@ def plot_population(
     use_quartiles : bool, optional
         If `True`, the median and quartiles are used instead of the mean and std, by
         default `False`.
+    use_sem : bool, optional
+        If `True`, the standard error of the mean is computed instead of the std, by
+        default `False`.
     log : bool, optional
         If `True`, the y-axis is plotted in log scale, by default `False`.
     clip_min : float, optional
@@ -77,11 +82,12 @@ def plot_population(
     alpha : float, optional
         The transparency of the filled area, by default `0.25`.
     """
+    assert not (use_quartiles and use_sem), "Cannot plot both quartiles and sem."
     if use_quartiles:
         lower, middle, upper = np.nanquantile(y, [0.25, 0.5, 0.75], axis)
     else:
         middle = np.nanmean(y, axis)
-        std = np.nanstd(y, axis)
+        std = np.nanstd(y, axis) if not use_sem else sem(y, axis, nan_policy="omit")
         lower = middle - std
         upper = middle + std
     if clip_min is not None:
