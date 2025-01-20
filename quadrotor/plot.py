@@ -43,6 +43,8 @@ def plot_states_and_actions(
         The dictionaries from different simulations, each containing the keys
         `"actions"` and `"states"`.
     """
+    if not any("states" in d and "actions" in d and "obstacles" in d for d in data):
+        return
     fig = plt.figure(constrained_layout=True)
     gs = GridSpec(2, 2, fig)
 
@@ -72,6 +74,8 @@ def plot_states_and_actions(
         ax.axhline(Env.xf[i], color="k", ls="--")
 
     for i, datum in enumerate(data):
+        if "actions" not in datum or "states" not in datum or "obstacles" not in datum:
+            continue
         actions = datum["actions"]  # n_agents x n_ep x timesteps x na
         states = datum["states"]  # n_agents x n_ep x timesteps + 1 x ns
         # print(np.mean(states, (0, 1, 2)), np.std(states, (0, 1, 2)))
@@ -131,6 +135,8 @@ def plot_action_bounds(
         The dictionaries from different simulations, each containing the keys
         `"actions"`.
     """
+    if not any("actions" in d for d in data):
+        return
     _, axs = plt.subplots(3, 1, constrained_layout=True, sharex=True)
 
     na = Env.na
@@ -144,6 +150,8 @@ def plot_action_bounds(
         axs[i].axhline(-dtiltmax, color="k", ls="--")
 
     for i, datum in enumerate(data):
+        if "actions" not in datum:
+            continue
         actions = datum["actions"]  # n_agents x n_ep x timesteps x na
         c = f"C{i}"
         timesteps = actions.shape[2]
@@ -179,16 +187,19 @@ def plot_safety(
     ----------
     data : collection of dictionaries (str, arrays)
         The dictionaries from different simulations, each containing the keys
-        `"actions"` and `"states"`.
+        `"states"` and `"obstacles"`, as well as optionally `"kappann_weights"` and
+        `"updates_history"`.
     names : collection of str, optional
         The names of the simulations to use in the plot.
     """
+    if not any("states" in d and "obstacles" in d for d in data):
+        return
     env = Env(0)
     n_obs = env.n_obstacles
     safety = env.safety_constraints
     kappann_cache = {}
 
-    plot_gamma = any("kappann_weights" in d or "updates_history" in d for d in data)
+    plot_gamma = any("weights" in d for d in data)
     fig = plt.figure(constrained_layout=True)
     gs = GridSpec(n_obs + 1, 2 if plot_gamma else 1, fig)
     axs_h = [fig.add_subplot(gs[i, 0]) for i in range(n_obs)]
@@ -205,6 +216,8 @@ def plot_safety(
 
     violations_data = []
     for i, datum in enumerate(data):
+        if "states" not in datum or "obstacles" not in datum:
+            continue
         states = datum["states"]  # n_agents x n_ep x timesteps + 1 x ns
         obs = datum["obstacles"]  # n_agents x n_ep x 2 (pos & dir) x 3d x n_obstacles
         c = f"C{i}"

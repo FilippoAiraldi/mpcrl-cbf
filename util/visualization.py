@@ -358,24 +358,24 @@ def plot_training(
     ----------
     data : collection of dictionaries (str, arrays)
         The dictionaries from different simulations, each potentially containing the
-        keys `"updates_history"`, `"td_errors"`, or `"policy_performances"`, and
+        keys `"updates_history"`, `"td_errors"`, or `"policy_performances"`, or
         `"evals"`.
     """
     param_names = set()
     for datum in data:
         if "updates_history" in datum:
             param_names.update(datum["updates_history"].keys())
+    n_params = len(param_names)
     any_td = any("td_errors" in d for d in data)
     any_pg = any("policy_gradients" in d for d in data)
     any_eval = any("evals" in d for d in data)
-    n = len(param_names)
-    if n == 0 and not any_td and not any_pg and not any_eval:
+    if n_params == 0 and not any_td and not any_pg and not any_eval:
         return
 
     fig = plt.figure(constrained_layout=True)
-    ncols = int(np.round(np.sqrt(n)))
-    nrows = int(np.ceil(n / ncols))
-    gs = GridSpec(nrows + int(any_td or any_pg) + int(any_eval), ncols, fig)
+    ncols = max(1, int(np.round(np.sqrt(n_params))))
+    nrows = int(np.ceil(n_params / ncols))
+    gs = GridSpec(int(any_td or any_pg) + int(any_eval) + nrows, ncols, fig)
     offset = 0
     if any_td or any_pg:
         if any_td and any_pg:
@@ -389,14 +389,15 @@ def plot_training(
     if any_eval:
         ax_eval = fig.add_subplot(gs[offset, :])
         offset += 1
-    param_names = sorted(param_names)
-    start = nrows * ncols - n
-    ax_par_first = fig.add_subplot(gs[start // ncols + offset, start % ncols])
-    ax_pars = {param_names[0]: ax_par_first}
-    for i, name in enumerate(param_names[1:], start=start + 1):
-        ax_pars[name] = fig.add_subplot(
-            gs[i // ncols + offset, i % ncols], sharex=ax_par_first
-        )
+    if n_params > 0:
+        param_names = sorted(param_names)
+        start = nrows * ncols - n_params
+        ax_par_first = fig.add_subplot(gs[start // ncols + offset, start % ncols])
+        ax_pars = {param_names[0]: ax_par_first}
+        for i, name in enumerate(param_names[1:], start=start + 1):
+            ax_pars[name] = fig.add_subplot(
+                gs[i // ncols + offset, i % ncols], sharex=ax_par_first
+            )
 
     for i, datum in enumerate(data):
         c = f"C{i}"
@@ -424,8 +425,8 @@ def plot_training(
                 updates = np.arange(param.shape[1])
                 param = param.reshape(*param.shape[:2], -1)  # n_agents x n_up x ...
                 ax = ax_pars[name]
-                n = param.shape[2]
-                alpha = 0.25 if n == 1 else 0
+                n_params = param.shape[2]
+                alpha = 0.25 if n_params == 1 else 0
                 for idx in range(param.shape[2]):
                     plot_population(
                         ax, updates, param[..., idx], axis=0, color=c, alpha=alpha
@@ -440,7 +441,8 @@ def plot_training(
     if any_eval:
         ax_eval.set_xlabel("Episode")
         ax_eval.set_ylabel("Eval. Return")
-    for name, ax in ax_pars.items():
-        ax.set_xlabel("Episode")
-        ax.set_ylabel(name)
-        ax._label_outer_xaxis(skip_non_rectangular_axes=False)
+    if n_params > 0:
+        for name, ax in ax_pars.items():
+            ax.set_xlabel("Episode")
+            ax.set_ylabel(name)
+            ax._label_outer_xaxis(skip_non_rectangular_axes=False)
