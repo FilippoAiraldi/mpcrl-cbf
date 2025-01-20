@@ -1,5 +1,5 @@
 import sys
-from argparse import ArgumentDefaultsHelpFormatter, ArgumentError, ArgumentParser
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
@@ -198,9 +198,7 @@ if __name__ == "__main__":
         "--from-file",
         type=str,
         default="",
-        help="Loads a trained learning-based controller from training results' file, "
-        "instead of randomly initializing it. If set, `--n-ctrl` is overwritten to the "
-        "number of controllers in the file. Only supported for `controller=scmpc`.",
+        help="Loads (SC)MPC options, some simulation options and weights from a file.",
     )
     group = parser.add_argument_group("Storing and plotting options")
     group.add_argument(
@@ -220,25 +218,30 @@ if __name__ == "__main__":
         "--n-jobs", type=int, default=1, help="Number of parallel processes."
     )
     args = parser.parse_args()
-    args.terminal_cost = set(args.terminal_cost)
 
-    # if a training file is specified, load the last learnable weights from it and
-    # overwrite the number of controllers
+    # if a file is specified, load args and weights from it
     if args.from_file:
-        if args.controller != "scmpc":
-            raise ArgumentError("Only SCMPC controllers can be loaded from file.")
-
         from csnlp.util.io import load
 
         data = load(args.from_file)
-        if "updates_history" not in data:
-            raise ArgumentError("No learning history found in the file.")
-        params = data["updates_history"]
-        args.n_ctrl = next(iter(params.values())).shape[0]
-        print(f"Loaded {args.n_ctrl} controllers from {args.from_file}.")
-        weights = [{n: w[i, -1] for n, w in params.items()} for i in range(args.n_ctrl)]
+        data_args = data.pop("args")
+        args.n_ctrl = data_args["n_agents"]  # n_eval is left untouched
+        for attr in (
+            "horizon",
+            "dcbf",
+            "use_kappann",
+            "soft",
+            "bound_initial_state",
+            "terminal_cost",
+            "scenarios",
+            "timesteps",
+        ):
+            setattr(args, attr, data_args[attr])
+        weights = data["weights"]
+        weights = [{n: w[a] for n, w in weights.items()} for a in range(args.n_ctrl)]
     else:
         weights = [None] * args.n_ctrl
+    tcost = set(args.terminal_cost)
 
     # prepare arguments to the simulation
     controller = args.controller
@@ -248,7 +251,7 @@ if __name__ == "__main__":
         "use_kappann": args.use_kappann,
         "soft": args.soft,
         "bound_initial_state": args.bound_initial_state,
-        "terminal_cost": args.terminal_cost,
+        "terminal_cost": tcost,
         "scenarios": args.scenarios,
     }
     n_eval = args.n_eval
