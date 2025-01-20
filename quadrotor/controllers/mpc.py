@@ -14,14 +14,7 @@ from mpcrl.util.control import rk4
 from mpcrl.util.seeding import RngType
 from scipy.linalg import solve_discrete_are as dlqr
 
-from util.defaults import (
-    DCBF_GAMMA,
-    KAPPANN_HIDDEN,
-    PSDNN_HIDDEN,
-    PWQNN_HIDDEN,
-    SOLVER_OPTS,
-    TIME_MEAS,
-)
+from util.defaults import DCBF_GAMMA, SOLVER_OPTS, TIME_MEAS
 from util.nn import nn2function
 
 
@@ -66,9 +59,9 @@ def create_mpc(
     soft: bool,
     bound_initial_state: bool,
     terminal_cost: set[Literal["dlqr", "pwqnn", "psdnn"]],
-    kappann_hidden_size: Sequence[int] = KAPPANN_HIDDEN,
-    pwqnn_hidden_size: int = PWQNN_HIDDEN,
-    psdnn_hidden_sizes: Sequence[int] = PSDNN_HIDDEN,
+    kappann_hidden_size: Sequence[int],
+    pwqnn_hidden_size: int,
+    psdnn_hidden_sizes: Sequence[int],
     env: Env | None = None,
     *_: Any,
     **__: Any,
@@ -99,12 +92,12 @@ def create_mpc(
         semidefinite neural network is used to approximate the terminal cost. Can also
         be a set of multiple terminal costs to use, at which point these are summed
         together; can also be an empty set, in which case no terminal cost is used.
-    kappann_hidden_size : sequence of int, optional
+    kappann_hidden_size : sequence of int
         The number of hidden units in the multilayer perceptron used to learn the
         DCBF Kappa function, if `dcbf` is `True`.
-    pwqnn_hidden_size : int, optional
+    pwqnn_hidden_size : int
         The number of hidden units in the piecewise quadratic neural network, if used.
-    psdnn_hidden_sizes : sequence of int, optional
+    psdnn_hidden_sizes : sequence of int
         The number of hidden units in the positive semidefinite neural network, if used.
     env : Env | None, optional
         The environment to build the MPC for. If `None`, a new default environment is

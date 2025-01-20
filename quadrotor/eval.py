@@ -13,6 +13,8 @@ sys.path.append(str(repo_dir))
 
 from env import QuadrotorEnv as Env
 
+from util.defaults import KAPPANN_HIDDEN, PSDNN_HIDDEN, PWQNN_HIDDEN
+
 
 def get_controller(
     controller_name: Literal["mpc", "scmpc"],
@@ -156,6 +158,13 @@ if __name__ == "__main__":
         help="Whether to use an NN as the CBF class Kappa function.",
     )
     group.add_argument(
+        "--kappann-hidden",
+        type=int,
+        default=KAPPANN_HIDDEN,
+        nargs=2,
+        help="The number of hidden units in the CBF class Kappa MLP function, if used.",
+    )
+    group.add_argument(
         "--soft",
         action="store_true",
         help="Whether to use soft constraints in the MPC controller.",
@@ -180,6 +189,19 @@ if __name__ == "__main__":
         type=int,
         default=32,
         help="The number of scenarios to use in the SCMPC controller.",
+    )
+    group.add_argument(
+        "--pwqnn-hidden",
+        type=int,
+        default=PWQNN_HIDDEN,
+        help="The number of hidden units in the PWQNN terminal cost, if used.",
+    )
+    group.add_argument(
+        "--psdnn-hidden",
+        type=int,
+        default=PSDNN_HIDDEN,
+        nargs=2,
+        help="The number of hidden units in the PSDNN terminal cost, if used.",
     )
     group = parser.add_argument_group("Simulation options")
     group.add_argument(
@@ -230,9 +252,12 @@ if __name__ == "__main__":
             "horizon",
             "dcbf",
             "use_kappann",
+            "kappann_hidden",
             "soft",
             "bound_initial_state",
             "terminal_cost",
+            "pwqnn_hidden",
+            "psdnn_hidden",
             "scenarios",
             "timesteps",
         ):
@@ -253,6 +278,9 @@ if __name__ == "__main__":
         "bound_initial_state": args.bound_initial_state,
         "terminal_cost": tcost,
         "scenarios": args.scenarios,
+        "kappann_hidden_size": args.kappann_hidden,
+        "pwqnn_hidden_size": args.pwqnn_hidden,
+        "psdnn_hidden_sizes": args.psdnn_hidden,
     }
     n_eval = args.n_eval
     ts = args.timesteps

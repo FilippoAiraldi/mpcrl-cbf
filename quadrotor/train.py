@@ -18,6 +18,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from controllers.scmpc import create_scmpc
 from env import QuadrotorEnv as Env
 
+from util.defaults import KAPPANN_HIDDEN, PSDNN_HIDDEN, PWQNN_HIDDEN
 from util.wrappers import RecordSolverTime
 
 
@@ -250,6 +251,13 @@ if __name__ == "__main__":
         help="Whether to use an NN as the CBF class Kappa function.",
     )
     group.add_argument(
+        "--kappann-hidden",
+        type=int,
+        default=KAPPANN_HIDDEN,
+        nargs=2,
+        help="The number of hidden units in the CBF class Kappa MLP function, if used.",
+    )
+    group.add_argument(
         "--soft",
         action="store_true",
         help="Whether to use soft constraints in the SCMPC controller.",
@@ -265,6 +273,19 @@ if __name__ == "__main__":
         nargs="*",
         default={"dlqr", "psdnn"},
         help="Which type of terminal cost to use in the SCMPC controller.",
+    )
+    group.add_argument(
+        "--pwqnn-hidden",
+        type=int,
+        default=PWQNN_HIDDEN,
+        help="The number of hidden units in the PWQNN terminal cost, if used.",
+    )
+    group.add_argument(
+        "--psdnn-hidden",
+        type=int,
+        default=PSDNN_HIDDEN,
+        nargs=2,
+        help="The number of hidden units in the PSDNN terminal cost, if used.",
     )
     group = parser.add_argument_group("Simulation options")
     group.add_argument(
@@ -312,6 +333,9 @@ if __name__ == "__main__":
         "bound_initial_state": args.bound_initial_state,
         "terminal_cost": args.terminal_cost,
         "scenarios": args.scenarios,
+        "kappann_hidden_size": args.kappann_hidden,
+        "pwqnn_hidden_size": args.pwqnn_hidden,
+        "psdnn_hidden_sizes": args.psdnn_hidden,
     }
     lr = args.lr
     eps = args.exploration_eps

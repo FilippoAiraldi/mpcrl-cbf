@@ -14,14 +14,7 @@ from env import QuadrotorEnv as Env
 from mpcrl.util.seeding import RngType
 from scipy.linalg import solve_discrete_are as dlqr
 
-from util.defaults import (
-    DCBF_GAMMA,
-    KAPPANN_HIDDEN,
-    PSDNN_HIDDEN,
-    PWQNN_HIDDEN,
-    SOLVER_OPTS,
-    TIME_MEAS,
-)
+from util.defaults import DCBF_GAMMA, SOLVER_OPTS, TIME_MEAS
 from util.nn import nn2function
 
 
@@ -33,9 +26,9 @@ def create_scmpc(
     soft: bool,
     bound_initial_state: bool,
     terminal_cost: set[Literal["dlqr", "pwqnn", "psdnn"]],
-    kappann_hidden_size: Sequence[int] = KAPPANN_HIDDEN,
-    pwqnn_hidden_size: int = PWQNN_HIDDEN,
-    psdnn_hidden_sizes: Sequence[int] = PSDNN_HIDDEN,
+    kappann_hidden_size: Sequence[int],
+    pwqnn_hidden_size: int,
+    psdnn_hidden_sizes: Sequence[int],
     env: Env | None = None,
     *_: Any,
     **__: Any,
@@ -68,12 +61,12 @@ def create_scmpc(
         semidefinite neural network is used to approximate the terminal cost. Can also
         be a set of multiple terminal costs to use, at which point these are summed
         together; can also be an empty set, in which case no terminal cost is used.
-    kappann_hidden_size : sequence of int, optional
+    kappann_hidden_size : sequence of int
         The number of hidden units in the multilayer perceptron used to learn the
         DCBF Kappa function, if `dcbf` is `True`.
-    pwqnn_hidden_size : int, optional
+    pwqnn_hidden_size : int
         The number of hidden units in the piecewise quadratic neural network, if used.
-    psdnn_hidden_sizes : sequence of int, optional
+    psdnn_hidden_sizes : sequence of int
         The number of hidden units in the positive semidefinite neural network, if used.
     env : Env | None, optional
         The environment to build the MPC for. If `None`, a new default environment is
@@ -232,12 +225,16 @@ def get_scmpc_controller(
     if weights is not None:
         # load numerical values from given weights
         for n, weight in weights.items():
-            if n in scmpc.parameters:
-                sym_weight = scmpc.parameters[n]
-                if sym_weight.shape == weight.shape:
-                    raise ValueError(f"Shape mismatch for parameter '{n}'.")
-                sym_weights_[n] = sym_weight
-                num_weights_[n] = weight
+            if n not in scmpc.parameters:
+                continue
+            sym_weight = scmpc.parameters[n]
+            if sym_weight.shape != weight.shape:
+                raise ValueError(
+                    f"Shape mismatch for parameter '{n}'. Expected "
+                    f"{sym_weight.shape}; got {weight.shape} instead."
+                )
+            sym_weights_[n] = sym_weight
+            num_weights_[n] = weight
     else:
         # initialize weights randomly
         for nn, prefix in [(kappann, "kappann"), (pwqnn, "pwqnn"), (psdnn, "psdnn")]:
