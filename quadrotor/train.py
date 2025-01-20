@@ -11,8 +11,7 @@ from csnn import init_parameters, set_sym_type
 from joblib import Parallel, delayed
 from mpcrl import LearnableParameter, LearnableParametersDict, RlLearningAgent
 from mpcrl.util.seeding import RngType
-from mpcrl.wrappers.agents import Evaluate, Log, RecordUpdates
-from mpcrl.wrappers.envs import MonitorEpisodes, MonitorInfos
+from mpcrl.wrappers.agents import Evaluate, Log
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
@@ -99,14 +98,12 @@ def train_one_agent(
 
     Returns
     -------
-    6 float arrays, 1 dict of float arrays, 1 float array
+    2 float arrays, 1 dict of float arrays, 2 float arrays
         Returns the following objects in order:
          - an array of the total cost for each training episode
-         - two arrays containing the actions and states trajectories respectively
          - an array of solution computation times (for `V(s)` and `Q(s,a)`,
          respectively)
-         - an array containing the obstacles positions and direction for each episode
-         - a dict containing the history of updates to the learnable parameters
+         - a dict containing the final learnable weights
          - an array of the evaluation returns for each evaluation episode
          - an array of TD errors (if `"lstd-ql"`) or policy gradients (if `"lstd-dpg"`).
     """
@@ -158,7 +155,6 @@ def train_one_agent(
         name=f"{algorithm}_{n}",
     )
     agent.V.set_learning_agent(agent)  # gimmick to save solver times only for training
-    agent = RecordUpdates(agent)
     agent = Log(agent, level=DEBUG, log_frequencies={"on_episode_end": 100})
     agent = Evaluate(
         agent,
@@ -172,17 +168,11 @@ def train_one_agent(
     )
 
     # launch training
-    env = MonitorInfos(env, deque_size=episodes)
-    env = MonitorEpisodes(env, deque_size=episodes)
     R = agent.train(env, episodes, rng, False)
     agent.detach_wrapper(True)  # prevents joblib from getting stuck
 
     # extract and return the data from the environment and the agent
-    U = np.asarray(env.actions).squeeze(-1)
-    X = np.asarray(env.observations)
-    infos = env.env.finalized_reset_infos()
-    obstacles = np.stack((infos["pos_obs"], infos["dir_obs"]), 1)
-    updates_history = {n: np.asarray(par) for n, par in agent.updates_history.items()}
+    final_weights = learnable_pars.value_as_dict
     evals = np.asarray(agent.eval_returns)
     others = []
     if algorithm == "lstd-ql":
@@ -199,7 +189,7 @@ def train_one_agent(
         others.append(
             np.reshape(agent.policy_gradients, (n_episodes, learnable_pars.size)),
         )
-    return R, U, X, sol_times, obstacles, updates_history, evals, *others
+    return R, sol_times, final_weights, evals, *others
 
 
 if __name__ == "__main__":
@@ -341,26 +331,17 @@ if __name__ == "__main__":
         for i, seed in enumerate(seeds)
     )
 
-    # congregate data all together - updates_history is a dictionary, so requires
+    # congregate data all together - weights is a dictionary, so requires
     # further attention
-    keys = [
-        "cost",
-        "actions",
-        "states",
-        "sol_times",
-        "obstacles",
-        "updates_history",
-        "evals",
-    ]
+    keys = ["cost", "sol_times", "weights", "evals"]
     if algo == "lstd-ql":
         keys.append("td_errors")
     elif algo == "lstd-dpg":
         keys.append("policy_gradients")
     data_dict = dict(zip(keys, map(np.asarray, zip(*data))))
-    par_names = data_dict["updates_history"][0].keys()
-    data_dict["updates_history"] = {
-        n: np.asarray([d[n] for d in data_dict["updates_history"]]) for n in par_names
-    }
+    weights = data_dict.pop("weights")
+    wnames = weights[0].keys()
+    data_dict["weights"] = {n: np.asarray([d[n] for d in weights]) for n in wnames}
 
     # finally, store and plot the results. If no filepath is passed, always plot
     if args.save:
@@ -369,15 +350,9 @@ if __name__ == "__main__":
         save(args.save, **data_dict, args=args.__dict__, compression="lzma")
     if args.plot or not args.save:
         import matplotlib.pyplot as plt
-        from plot import (
-            plot_returns,
-            plot_solver_times,
-            plot_states_and_actions,
-            plot_training,
-        )
+        from plot import plot_returns, plot_solver_times, plot_training
 
         data, args = [data_dict], [args.__dict__]
-        plot_states_and_actions(data)
         plot_returns(data)
         plot_solver_times(data)
         plot_training(data)
