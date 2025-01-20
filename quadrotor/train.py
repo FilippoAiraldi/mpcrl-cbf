@@ -373,7 +373,6 @@ if __name__ == "__main__":
             plot_returns,
             plot_solver_times,
             plot_states_and_actions,
-            plot_terminal_cost_evolution,
             plot_training,
         )
 
@@ -382,5 +381,4 @@ if __name__ == "__main__":
         plot_returns(data)
         plot_solver_times(data)
         plot_training(data)
-        plot_terminal_cost_evolution(data, args)
         plt.show()
