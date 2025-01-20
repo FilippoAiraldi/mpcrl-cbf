@@ -196,11 +196,11 @@ def create_scmpc(
 def get_scmpc_controller(
     *args: Any,
     seed: RngType = None,
-    nn_weights: dict[str, npt.NDArray[np.floating]] | None = None,
+    weights: dict[str, npt.NDArray[np.floating]] | None = None,
     **kwargs: Any,
 ) -> tuple[
     Callable[[npt.NDArray[np.floating], Env], tuple[npt.NDArray[np.floating], float]],
-    dict[str, npt.NDArray[np.floating]] | None,
+    dict[str, npt.NDArray[np.floating]],
 ]:
     """Returns the MPC controller as a callable function.
 
@@ -211,9 +211,9 @@ def get_scmpc_controller(
         The arguments to pass to the `create_mpc` method.
     seed : RngType, optional
         The seed used during creating of the neural networks parameters, if necessary.
-    nn_weights : dict of (str, array), optional
-        The neural network weights to use in the controller. If `None`, the weights are
-        initialized randomly.
+    weights : dict of (str, array), optional
+        The MPC weights to use in the controller. If `None`, the weights are initialized
+        randomly.
 
     Returns
     -------
@@ -229,11 +229,14 @@ def get_scmpc_controller(
 
     # group its NN parameters (if any) into a vector and assign numerical values to them
     sym_weights_, num_weights_ = {}, {}
-    if nn_weights is not None:
+    if weights is not None:
         # load numerical values from given weights
-        for n, weight in nn_weights.items():
+        for n, weight in weights.items():
             if n in scmpc.parameters:
-                sym_weights_[n] = scmpc.parameters[n]
+                sym_weight = scmpc.parameters[n]
+                if sym_weight.shape == weight.shape:
+                    raise ValueError(f"Shape mismatch for parameter '{n}'.")
+                sym_weights_[n] = sym_weight
                 num_weights_[n] = weight
     else:
         # initialize weights randomly
@@ -282,10 +285,4 @@ def get_scmpc_controller(
 
     _f.reset = reset
 
-    # for plotting reasons, we also return the numerical weights of the MLP for kappa
-    kappann_weights = (
-        None
-        if kappann is None
-        else {k: v for k, v in num_weights_.items() if k.startswith("kappann")}
-    )
-    return _f, kappann_weights
+    return _f, num_weights_

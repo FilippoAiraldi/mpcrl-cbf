@@ -59,7 +59,7 @@ def simulate_controller_once(
     controller_kwargs: dict[str, Any],
     n_eval: int,
     timesteps: int,
-    nn_weights: dict[str, npt.NDArray[np.floating]] | None,
+    weights: dict[str, npt.NDArray[np.floating]] | None,
     seed: int,
 ) -> tuple[
     npt.NDArray[np.floating],
@@ -67,7 +67,7 @@ def simulate_controller_once(
     npt.NDArray[np.floating],
     npt.NDArray[np.floating],
     npt.NDArray[np.floating],
-    dict[str, npt.NDArray[np.floating]] | None,
+    dict[str, npt.NDArray[np.floating]],
 ]:
     """Simulates one episode of the quadrotor environment using the given controller.
 
@@ -81,27 +81,28 @@ def simulate_controller_once(
         The number of evaluations to perform for this controller.
     timesteps : int
         The number of timesteps to run each evaluation for.
-    nn_weights : dict of str to array-like, optional
-        The neural network weights to use in the controller. If `None`, the weights are
-        initialized randomly.
+    weights : dict of str to array-like, optional
+        The weights (e.g., for neural networkds) to use in the controller. If `None`,
+        these are initialized randomly.
     seed : int
         The seed for the random number generator.
 
     Returns
     -------
-    5 float arrays and an optional dict
+    5 float arrays and an dict
         Returns the following objects:
          - an array of the total cost for each episode
          - two arrays containing the actions and states trajectories respectively
          - an array of solution computation times
          - an array containing the obstacles positions and direction for each evaluation
-         - a dict of the MLP weights usefd to compute the Kappa class function when
-         DCBFs are employe for safety.
+         - a dict of the MPC numerical weights. If some `weights` were passed in, this
+           contains the same values. If not passed, this contains the randomly
+           initialized weights. Can be empty if MPC is not parametric.
     """
     # create env and controller only once
     env = Env(timesteps)
-    controller, kappann_weights = get_controller(
-        controller_name, **controller_kwargs, nn_weights=nn_weights, seed=seed
+    controller, weights_ = get_controller(
+        controller_name, **controller_kwargs, weights=weights, seed=seed
     )
 
     # simulate the controller on the environment for n_eval evaluations
@@ -122,7 +123,7 @@ def simulate_controller_once(
             U[e, t] = u
             X[e, t + 1] = x
             sol_times[e, t] = sol_time
-    return R, U, X, sol_times, obstacles, kappann_weights
+    return R, U, X, sol_times, obstacles, weights_
 
 
 if __name__ == "__main__":
@@ -262,17 +263,13 @@ if __name__ == "__main__":
         for weights_, seed in zip(weights, seeds)
     )
 
-    # congregate data all together - kappann_weights is a dictionary, so requires
-    # further attention - remove it if not used
-    keys = ("cost", "actions", "states", "sol_times", "obstacles", "kappann_weights")
+    # congregate data all together - weights is a dictionary, so requires further
+    # attention
+    keys = ("cost", "actions", "states", "sol_times", "obstacles", "weights")
     data_dict = dict(zip(keys, map(np.asarray, zip(*data))))
-    if args.dcbf and args.use_kappann:
-        wnames = data_dict["kappann_weights"][0].keys()
-        data_dict["kappann_weights"] = {
-            n: np.asarray([d[n] for d in data_dict["kappann_weights"]]) for n in wnames
-        }
-    else:
-        data_dict.pop("kappann_weights")
+    weights = data_dict.pop("weights")
+    wnames = weights[0].keys()
+    data_dict["weights"] = {n: np.asarray([d[n] for d in weights]) for n in wnames}
 
     # finally, store and plot the results. If no filepath is passed, always plot
     if args.save:
