@@ -267,6 +267,7 @@ if __name__ == "__main__":
     else:
         weights = [None] * args.n_ctrl
     tcost = set(args.terminal_cost)
+    print(f"Args: {args}\n")
 
     # prepare arguments to the simulation
     controller = args.controller

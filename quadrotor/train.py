@@ -322,6 +322,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     args.terminal_cost = set(args.terminal_cost)
+    print(f"Args: {args}\n")
 
     # prepare arguments to the training simulation
     algo = args.algorithm
