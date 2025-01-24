@@ -136,16 +136,16 @@ def create_scmpc(
 
     # compute stage cost
     dx = x - env.xf
-    Q = env.Q
-    R = env.R
-    J = sum(cs.bilin(Q, dx[:, i]) + cs.bilin(R, u[:, i]) for i in range(horizon))
+    Q = scmpc.parameter("Q", (ns,))  # we square these to ensure PSD
+    R = scmpc.parameter("R", (na,))
+    J = sum(cs.sumsqr(Q * dx[:, i]) + cs.sumsqr(R * u[:, i]) for i in range(horizon))
 
     # compute terminal cost
     pwqnn = psdnn = None
     if "dlqr" in terminal_cost:
         ldynamics = dtdynamics.factory("dyn_lin", ("x", "u"), ("jac:xf:x", "jac:xf:u"))
         A, B = ldynamics(env.xf, env.a0)
-        P = dlqr(A.toarray(), B.toarray(), Q, R)
+        P = dlqr(A.toarray(), B.toarray(), env.Q, env.R)
         J += cs.bilin(P, dx[:, -1])
 
     if "pwqnn" in terminal_cost:
@@ -220,7 +220,7 @@ def get_scmpc_controller(
     # create the MPC
     scmpc, kappann, pwqnn, psdnn = create_scmpc(*args, **kwargs)
 
-    # group its NN parameters (if any) into a vector and assign numerical values to them
+    # group its parameters (if any) into a dict and assign numerical values to them
     sym_weights_, num_weights_ = {}, {}
     if weights is not None:
         # load numerical values from given weights
@@ -236,7 +236,7 @@ def get_scmpc_controller(
             sym_weights_[n] = sym_weight
             num_weights_[n] = weight
     else:
-        # initialize weights randomly
+        # initialize NN weights randomly
         for nn, prefix in [(kappann, "kappann"), (pwqnn, "pwqnn"), (psdnn, "psdnn")]:
             if nn is None:
                 continue
@@ -247,11 +247,16 @@ def get_scmpc_controller(
             )
             sym_weights_.update((k, scmpc.parameters[k]) for k in nn_weights_)
             num_weights_.update(nn_weights_)
-    sym_weights = cs.vvcat(sym_weights_.values())
-    num_weights = cs.vvcat(num_weights_.values())
+
+        # also initialize the stage cost parameters
+        for k in ("Q", "R"):
+            sym_weights_[k] = scmpc.parameters[k]
+            num_weights_[k] = np.sqrt(np.diag(getattr(Env, k)))
 
     # group the symbolical inputs of the MPC controller
     primals = scmpc.nlp.x
+    sym_weights = cs.vvcat(sym_weights_.values())
+    num_weights = cs.vvcat(num_weights_.values())
     disturbances = cs.vvcat(scmpc.disturbances.values())
     args_in = (
         primals,

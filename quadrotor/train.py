@@ -141,8 +141,16 @@ def train_one_agent(
             LearnableParameter(name, weight.shape, weight, sym=sym_pars[name])
             for name, weight in init_parameters(psdnn, prefix="psdnn", seed=rng)
         )
+    for name in ("Q", "R"):
+        learnable_pars_.append(
+            LearnableParameter(
+                name,
+                sym_pars[name].shape,
+                np.sqrt(np.diag(getattr(Env, name))).reshape(-1, 1),
+                sym=sym_pars[name],
+            )
+        )
     learnable_pars = LearnableParametersDict(learnable_pars_)
-    assert learnable_pars.size > 0, "No learnable parameters found."
 
     # instantiate and wrap the agent
     agent = get_agent(

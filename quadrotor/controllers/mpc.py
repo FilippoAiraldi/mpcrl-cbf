@@ -167,16 +167,16 @@ def create_mpc(
 
     # compute stage cost
     dx = x - env.xf
-    Q = env.Q
-    R = env.R
-    J = sum(cs.bilin(Q, dx[:, i]) + cs.bilin(R, u[:, i]) for i in range(horizon))
+    Q = mpc.parameter("Q", (ns,))  # we square these to ensure PSD
+    R = mpc.parameter("R", (na,))
+    J = sum(cs.sumsqr(Q * dx[:, i]) + cs.sumsqr(R * u[:, i]) for i in range(horizon))
 
     # compute terminal cost
     pwqnn = psdnn = None
     if "dlqr" in terminal_cost:
         ldynamics = dtdynamics.factory("dyn_lin", ("x", "u"), ("jac:xf:x", "jac:xf:u"))
         A, B = ldynamics(env.xf, env.a0)
-        P = dlqr(A.toarray(), B.toarray(), Q, R)
+        P = dlqr(A.toarray(), B.toarray(), env.Q, env.R)
         J += cs.bilin(P, dx[:, -1])
 
     if "pwqnn" in terminal_cost:
@@ -243,7 +243,7 @@ def get_mpc_controller(*args: Any, seed: RngType = None, **kwargs: Any) -> tuple
     # create the MPC
     mpc, kappann, pwqnn, psdnn = create_mpc(*args, **kwargs)
 
-    # group its NN parameters (if any) into a vector and assign numerical values to them
+    # group its NN parameters (if any) into a dict and assign numerical values to them
     sym_weights_, num_weights_ = {}, {}
     for nn, prefix in [(kappann, "kappann"), (pwqnn, "pwqnn"), (psdnn, "psdnn")]:
         if nn is None:
@@ -254,11 +254,16 @@ def get_mpc_controller(*args: Any, seed: RngType = None, **kwargs: Any) -> tuple
             nn_weights = dict(init_parameters(nn, prefix=prefix, seed=seed))
         sym_weights_.update((k, mpc.parameters[k]) for k in nn_weights)
         num_weights_.update(nn_weights)
-    sym_weights = cs.vvcat(sym_weights_.values())
-    num_weights = cs.vvcat(num_weights_.values())
+
+    # also add the stage cost parameters
+    for k in ("Q", "R"):
+        sym_weights_[k] = mpc.parameters[k]
+        num_weights_[k] = np.sqrt(np.diag(getattr(Env, k)))
 
     # group the symbolical inputs of the MPC controller
     primals = mpc.nlp.x
+    sym_weights = cs.vvcat(sym_weights_.values())
+    num_weights = cs.vvcat(num_weights_.values())
     args_in = (
         primals,
         mpc.initial_states["x_0"],
