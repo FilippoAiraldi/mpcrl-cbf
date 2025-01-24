@@ -262,8 +262,8 @@ def get_mpc_controller(*args: Any, seed: RngType = None, **kwargs: Any) -> tuple
 
     # group the symbolical inputs of the MPC controller
     primals = mpc.nlp.x
-    sym_weights = cs.vvcat(sym_weights_.values())
-    num_weights = cs.vvcat(num_weights_.values())
+    sym_weights = cs.vvcat([sym_weights_[k] for k in sym_weights_])
+    num_weights = cs.vvcat([num_weights_[k] for k in sym_weights_])
     args_in = (
         primals,
         mpc.initial_states["x_0"],

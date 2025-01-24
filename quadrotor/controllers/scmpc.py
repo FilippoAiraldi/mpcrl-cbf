@@ -255,8 +255,8 @@ def get_scmpc_controller(
 
     # group the symbolical inputs of the MPC controller
     primals = scmpc.nlp.x
-    sym_weights = cs.vvcat(sym_weights_.values())
-    num_weights = cs.vvcat(num_weights_.values())
+    sym_weights = cs.vvcat([sym_weights_[k] for k in sym_weights_])
+    num_weights = cs.vvcat([num_weights_[k] for k in sym_weights_])
     disturbances = cs.vvcat(scmpc.disturbances.values())
     args_in = (
         primals,
