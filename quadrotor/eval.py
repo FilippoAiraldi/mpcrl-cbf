@@ -181,15 +181,6 @@ if __name__ == "__main__":
         default=set(),
         help="Which type of terminal cost to use in the MPC controller.",
     )
-    group = parser.add_argument_group(
-        "Scenario MPC (SCMPC) options (used only when `controller=scmpc`)"
-    )
-    group.add_argument(
-        "--scenarios",
-        type=int,
-        default=32,
-        help="The number of scenarios to use in the SCMPC controller.",
-    )
     group.add_argument(
         "--pwqnn-hidden",
         type=int,
@@ -202,6 +193,15 @@ if __name__ == "__main__":
         default=PSDNN_HIDDEN,
         nargs=2,
         help="The number of hidden units in the PSDNN terminal cost, if used.",
+    )
+    group = parser.add_argument_group(
+        "Scenario MPC (SCMPC) options (used only when `controller=scmpc`)"
+    )
+    group.add_argument(
+        "--scenarios",
+        type=int,
+        default=32,
+        help="The number of scenarios to use in the SCMPC controller.",
     )
     group = parser.add_argument_group("Simulation options")
     group.add_argument(
