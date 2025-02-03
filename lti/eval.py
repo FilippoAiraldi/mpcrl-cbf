@@ -186,7 +186,7 @@ if __name__ == "__main__":
         "or its bounding box.",
     )
     group.add_argument(
-        "--from-file",
+        "--from-train",
         type=str,
         default="",
         help="Loads a trained learning-based controller from training results' file, "
@@ -215,18 +215,18 @@ if __name__ == "__main__":
 
     # if a training file is specified, load the last learnable weights from it and
     # overwrite the number of controllers
-    if args.from_file:
+    if args.from_train:
         if args.controller != "scmpc":
             raise ArgumentError("Only SCMPC controllers can be loaded from file.")
 
         from csnlp.util.io import load
 
-        data = load(args.from_file)
+        data = load(args.from_train)
         if "updates_history" not in data:
             raise ArgumentError("No learning history found in the file.")
         params = data["updates_history"]
         args.n_ctrl = next(iter(params.values())).shape[0]
-        print(f"Loaded {args.n_ctrl} controllers from {args.from_file}.")
+        print(f"Loaded {args.n_ctrl} controllers from {args.from_train}.")
         weights = [{n: w[i, -1] for n, w in params.items()} for i in range(args.n_ctrl)]
     else:
         weights = [None] * args.n_ctrl

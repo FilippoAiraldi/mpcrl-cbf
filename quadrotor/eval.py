@@ -217,10 +217,11 @@ if __name__ == "__main__":
         help="Number of timesteps per each simulation.",
     )
     group.add_argument(
-        "--from-file",
+        "--from-train",
         type=str,
         default="",
-        help="Loads (SC)MPC options, some simulation options and weights from a file.",
+        help="Loads a trained learning-based controller, alongside other options, from "
+        "the specified training results' file.",
     )
     group = parser.add_argument_group("Storing and plotting options")
     group.add_argument(
@@ -241,11 +242,11 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    # if a file is specified, load args and weights from it
-    if args.from_file:
+    # if a training file is specified, load args and weights from it
+    if args.from_train:
         from csnlp.util.io import load
 
-        data = load(args.from_file)
+        data = load(args.from_train)
         data_args = data.pop("args")
         args.n_ctrl = data_args["n_agents"]  # n_eval is left untouched
         for attr in (
