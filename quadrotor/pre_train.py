@@ -167,23 +167,22 @@ class TorchPsdNN(nn.Module):
         if len(hidden_features) < 1:
             raise ValueError("Psdnn must have at least one hidden layer")
         super().__init__()
-        self.state_batchnorm = nn.BatchNorm1d(in_features, affine=False)
-        # create the layers
         features = chain([in_features], hidden_features)
         out_features = (out_mat_size * (out_mat_size + 1)) // 2
+
+        self.context_norm = nn.BatchNorm1d(in_features, affine=False)
         inner_layers = chain.from_iterable(
             (nn.Linear(i, j), act()) for i, j in pairwise(features)
         )
         last_layer = nn.Linear(hidden_features[-1], out_features)
         self.layers = nn.Sequential(*inner_layers, last_layer)
-        # for reshaping the output to a lower triangular matrix
+
         self._mat_size = (out_mat_size, out_mat_size)
         self._tril_idx = torch.tril_indices(out_mat_size, out_mat_size)
-        #
         self._xf = torch.as_tensor(Env.xf, dtype=DTYPE, device=DEVICE)[:, None]
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        y = self.layers(x)
+        y = self.layers(self.context_norm(x))
         out_size = x.shape[:-1] + self._mat_size
         out = torch.zeros(out_size, dtype=y.dtype, layout=y.layout, device=y.device)
         out[..., self._tril_idx[0], self._tril_idx[1]] = y
