@@ -12,7 +12,7 @@ import numpy.typing as npt
 import torch
 from joblib import Parallel, delayed
 from torch import nn
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import ConcatDataset, DataLoader, TensorDataset
 
 repo_dir = Path(__file__).resolve().parents[1]
 sys.path.append(str(repo_dir))
@@ -311,7 +311,7 @@ if __name__ == "__main__":
     group.add_argument(
         "--n-episodes-per-epoch",
         type=int,
-        default=20,
+        default=40,
         help="Number of training/validation episodes per epoch.",
     )
     group.add_argument(
@@ -397,10 +397,16 @@ if __name__ == "__main__":
         valid_dataloader = DataLoader(valid_dataset, batch_size)
 
         best_eval_loss = float("inf")
+        train_dataset = None
+
         for t in range(n_epochs):
-            train_dataset = generate_dataset(
+            new_train_dataset = generate_dataset(
                 controllers, n_ep_per_job, ts, parallel, seed + t
             )
+            if train_dataset is None:
+                train_dataset = new_train_dataset
+            else:
+                train_dataset = ConcatDataset((train_dataset, new_train_dataset))
             train_dataloader = DataLoader(train_dataset, batch_size)
 
             train_loss = train_loop(train_dataloader, mdl, loss_fn, optimizer)
