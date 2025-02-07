@@ -107,7 +107,7 @@ def create_scmpc(
     no = env.n_obstacles
     pos_obs = scmpc.parameter("pos_obs", (3, no))
     dir_obs = scmpc.parameter("dir_obs", (3, no))
-    context = cs.vvcat(Env.normalize_context(x0, pos_obs, dir_obs))
+    context = cs.veccat(x0, pos_obs, dir_obs)
     kappann = None
     if dcbf:
         h = env.safety_constraints(x, pos_obs, dir_obs)

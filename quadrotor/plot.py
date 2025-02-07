@@ -276,12 +276,9 @@ def plot_safety(
 
                 state_traj = states[a, e]
                 pos_obs, dir_obs = obs[a, e]
-                state_traj_norm, pos_obs_norm, dir_obs_norm = Env.normalize_context(
-                    state_traj, pos_obs, dir_obs
-                )
-                pos_obs_ = pos_obs_norm.reshape(1, -1, order="F").repeat(timesteps, 0)
-                dir_obs_ = dir_obs_norm.reshape(1, -1, order="F").repeat(timesteps, 0)
-                context = np.concatenate((state_traj_norm, pos_obs_, dir_obs_), 1)
+                pos_obs_ = pos_obs.reshape(1, -1, order="F").repeat(timesteps, 0)
+                dir_obs_ = dir_obs.reshape(1, -1, order="F").repeat(timesteps, 0)
+                context = np.concatenate((state_traj, pos_obs_, dir_obs_), 1)
                 gammas = nnfunc(x=context.T, **kappann_weights_)["y"].toarray()
                 for ax, gamma in zip(axs_gamma, gammas):
                     ax.plot(time, gamma, c)

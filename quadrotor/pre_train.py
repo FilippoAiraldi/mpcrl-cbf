@@ -170,7 +170,6 @@ class TorchPsdNN(nn.Module):
         features = chain([in_features], hidden_features)
         out_features = (out_mat_size * (out_mat_size + 1)) // 2
 
-        self.context_norm = nn.BatchNorm1d(in_features, affine=False)
         inner_layers = chain.from_iterable(
             (nn.Linear(i, j), act()) for i, j in pairwise(features)
         )
@@ -182,7 +181,7 @@ class TorchPsdNN(nn.Module):
         self._xf = torch.as_tensor(Env.xf, dtype=DTYPE, device=DEVICE)[:, None]
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        y = self.layers(self.context_norm(x))
+        y = self.layers(x)
         out_size = x.shape[:-1] + self._mat_size
         out = torch.zeros(out_size, dtype=y.dtype, layout=y.layout, device=y.device)
         out[..., self._tril_idx[0], self._tril_idx[1]] = y
