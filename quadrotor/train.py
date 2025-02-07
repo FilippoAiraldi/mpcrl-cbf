@@ -279,7 +279,7 @@ if __name__ == "__main__":
         "--terminal-cost",
         choices=("dlqr", "pwqnn", "psdnn"),
         nargs="*",
-        default={"dlqr", "psdnn"},
+        default={"psdnn"},
         help="Which type of terminal cost to use in the SCMPC controller.",
     )
     group.add_argument(
