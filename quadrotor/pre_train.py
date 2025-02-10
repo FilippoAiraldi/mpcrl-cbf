@@ -13,6 +13,7 @@ import torch
 from joblib import Parallel, delayed
 from torch import nn
 from torch.utils.data import ConcatDataset, DataLoader, TensorDataset
+from torcheval.metrics import MeanSquaredError, R2Score
 
 repo_dir = Path(__file__).resolve().parents[1]
 sys.path.append(str(repo_dir))
@@ -198,7 +199,7 @@ class TorchPsdNN(nn.Module):
 
 def train_loop(
     dl: DataLoader, model: TorchPsdNN, loss_fn: Callable, optim: torch.optim.Optimizer
-) -> float:
+) -> tuple[float, float, float]:
     """Trains the model on the given dataloader.
 
     Parameters
@@ -214,23 +215,36 @@ def train_loop(
 
     Returns
     -------
-    float
-        The average loss over the training dataset.
+    3 floats
+        Loss function, normalized RMSE and R2 score on the training dataset.
     """
     model.train()
+
     train_loss = 0.0
+    mse = MeanSquaredError()
+    r2score = R2Score()
+    G_min, G_max = float("inf"), float("-inf")
+
     for context, G in dl:
         pred = model.predict_state_value(context)
         loss = loss_fn(pred, G)
         loss.backward()
         optim.step()
         optim.zero_grad()
+
         train_loss += loss.item()
-    train_loss /= len(dl)
-    return train_loss
+        mse.update(pred, G)
+        r2score.update(pred, G)
+        G_min = min(G_min, G.min().item())
+        G_max = max(G_max, G.max().item())
+
+    nrmse = mse.compute().sqrt().item() / (G_max - G_min + 1e-27)
+    return train_loss / len(dl), nrmse, r2score.compute().item()
 
 
-def eval_loop(dl: DataLoader, model: TorchPsdNN, loss_fn: Callable) -> float:
+def eval_loop(
+    dl: DataLoader, model: TorchPsdNN, loss_fn: Callable
+) -> tuple[float, float, float]:
     """Evaluates the model on the given dataloader.
 
     Parameters
@@ -244,17 +258,27 @@ def eval_loop(dl: DataLoader, model: TorchPsdNN, loss_fn: Callable) -> float:
 
     Returns
     -------
-    float
-        The average loss over the evaluation dataset.
+    3 floats
+        Loss function, normalized RMSE and R2 score on the evluation dataset.
     """
     model.eval()
+
     test_loss = 0.0
+    mse = MeanSquaredError()
+    r2score = R2Score()
+    G_min, G_max = float("inf"), float("-inf")
+
     with torch.no_grad():
         for context, G in dl:
             pred = model.predict_state_value(context)
             test_loss += loss_fn(pred, G).item()
-    test_loss /= len(dl)
-    return test_loss
+            mse.update(pred, G)
+            r2score.update(pred, G)
+            G_min = min(G_min, G.min().item())
+            G_max = max(G_max, G.max().item())
+
+    nrmse = mse.compute().sqrt().item() / (G_max - G_min + 1e-27)
+    return test_loss / len(dl), nrmse, r2score.compute().item()
 
 
 if __name__ == "__main__":
@@ -389,7 +413,7 @@ if __name__ == "__main__":
     # beginning to better evaluate training convergence - for training a new dataset is
     # generated every epoch on the fly
     n_epochs = args.n_epochs
-    logging.info("epoch,train_loss,val_loss")
+    logging.info("epoch,train_loss,train_nrmse,train_r2,eval_loss,eval_nrmse,eval_r2")
     with Parallel(n_jobs, verbose=10, return_as="generator_unordered") as parallel:
         valid_dataset = generate_dataset(controllers, n_ep_per_job, ts, parallel, seed)
         valid_dataloader = DataLoader(valid_dataset, batch_size)
@@ -407,8 +431,10 @@ if __name__ == "__main__":
                 train_dataset = ConcatDataset((train_dataset, new_train_dataset))
             train_dataloader = DataLoader(train_dataset, batch_size)
 
-            train_loss = train_loop(train_dataloader, mdl, loss_fn, optimizer)
-            eval_loss = eval_loop(valid_dataloader, mdl, loss_fn)
+            train_loss, train_nrmse, train_r2 = train_loop(
+                train_dataloader, mdl, loss_fn, optimizer
+            )
+            eval_loss, eval_nrmse, eval_r2 = eval_loop(valid_dataloader, mdl, loss_fn)
 
             if eval_loss < best_eval_loss:
                 best_eval_loss = eval_loss
@@ -421,4 +447,12 @@ if __name__ == "__main__":
                 torch.save(checkpoint, f"{save_filename}_best.pt")
             if t % (n_epochs // 10) == 0:
                 print(f"Epoch {t:>5d}/{n_epochs:>5d}")
-            logging.info(f"{t},{train_loss:.15e},{eval_loss:.15e}")
+            metrics = (
+                train_loss,
+                train_nrmse,
+                train_r2,
+                eval_loss,
+                eval_nrmse,
+                eval_r2,
+            )
+            logging.info(f"{t}," + ",".join(f"{x:.15e}" for x in metrics))
