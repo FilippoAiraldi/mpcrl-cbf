@@ -373,4 +373,5 @@ if __name__ == "__main__":
         plot_solver_times(data, unique_names)
     if args.all or args.training:
         plot_training(data, unique_names)
-    plt.show()
+    if plt.get_fignums():
+        plt.show()

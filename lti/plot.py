@@ -350,4 +350,5 @@ if __name__ == "__main__":
         plot_training(data, unique_names)
     if args.all or args.terminal_cost:
         plot_terminal_cost_evolution(data, sim_args, unique_names)
-    plt.show()
+    if plt.get_fignums():
+        plt.show()
