@@ -58,18 +58,17 @@ def simulate_controller_once(
     U_prev = np.empty((n_ep, timesteps, env.na))
     X = np.empty((n_ep, timesteps, env.ns))
     obstacles = np.empty((n_ep, 2, *env.safety_constraints.size_in(1)))
+
     for e, (seed, ic) in enumerate(zip(seeds, initial_conditions)):
         controller.reset()
         x, _ = env.reset(seed=int(seed), options={"ic": ic})
         obstacles[e] = env.pos_obs, env.dir_obs
-        X[e, 0] = x
         for t in range(timesteps):
-            u, _ = controller(x, env)
+            X[e, t] = x
             U_prev[e, t] = env.previous_action
+            u, _ = controller(x, env)
             x, r, _, _, _ = env.step(u)
             R[e, t] = r
-            if t < timesteps - 1:
-                X[e, t + 1] = x
     return R, X, U_prev, obstacles
 
 
