@@ -14,6 +14,13 @@ def do_plotting(filenames: Sequence[str], log: bool) -> None:
     nrows = len(data)
     _, axs_all = plt.subplots(nrows, 3, sharex=True, constrained_layout=True)
     for i, (fn, datum, axs) in enumerate(zip(filenames, data, axs_all)):
+        # if the last row contains an epoch == -1, it reports the testing results!
+        if datum[-1, 0] == -1:
+            test_loss, test_nrmse, test_r2 = datum[-1, 1:]
+            print(
+                f"{fn}: loss={test_loss:.6f}, NRMSE={test_nrmse:.6f}, R2={test_r2:.6f}"
+            )
+            datum = datum[:-1]  # remove that row before the rest of the script
         epochs, train_loss, train_nrmse, train_r2, val_loss, val_nrmse, val_r2 = datum.T
 
         method = getattr(axs[0], "semilogy" if log else "plot")
