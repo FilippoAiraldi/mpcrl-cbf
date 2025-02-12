@@ -61,8 +61,6 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
     # initial, final, mean and std of states
     x0 = np.asarray([0.0, 0.0, 2.0, 0.0, 0.0, 0.0])
     xf = np.asarray([15.0, 15.0, 13.0, 0.0, 0.0, 0.0])
-    x_mean = np.asarray([8.8, 8.8, 10.3, 2.3, 2.3, 1.7])  # empirically found
-    x_std = np.asarray([4.5, 4.9, 3.1, 1.5, 1.6, 2.1])  # empirically found
 
     # default action and action space bounds
     a0 = np.asarray([9.81, 0.0, 0.0, 0.0])
@@ -139,7 +137,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         else:
             x = self.x0
 
-        for _ in range(100):
+        for _ in range(1000):
             self.pos_obs = self.np_random.normal(self.pos_obs_mean, self.pos_obs_std)
             self.dir_obs = self.np_random.normal(self.dir_obs_mean, self.dir_obs_std)
             self.dir_obs /= np.linalg.norm(self.dir_obs, axis=0)
