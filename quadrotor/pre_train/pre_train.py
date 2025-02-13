@@ -25,6 +25,53 @@ DEVICE = torch.device("cpu")
 AS_TENSOR = partial(torch.as_tensor, dtype=DTYPE, device=DEVICE)
 
 
+def load_dataset(
+    filename: str, fractions: Sequence[float] = (0.6, 0.2, 0.2)
+) -> tuple[TensorDataset, TensorDataset, TensorDataset, float]:
+    """Loads the dataset and splits it into training, evaluation, and testing datasets.
+    Also normalizes the input data."""
+    # load the dataset
+    dataset = load(filename)
+    cost_to_go = AS_TENSOR(dataset["cost_to_go"])
+    cost_to_go_ptp = (cost_to_go.max() - cost_to_go.min()).item()
+    states = AS_TENSOR(dataset["states"])
+    prev_actions = AS_TENSOR(dataset["previous_actions"])
+    obstacles = AS_TENSOR(dataset["obstacles"])
+    pos_obstacles, dir_obstacles = obstacles[..., 0, :], obstacles[..., 1, :]
+
+    # split the dataset indices into training, evaluation, and testing
+    fractions = (0.6, 0.2, 0.2)
+    n_ep, timesteps = states.shape[:2]
+    train_idx, eval_idx, test_idx = random_split(torch.arange(n_ep), fractions)
+
+    # normalize input data via the training means and stds
+    x_std, x_mean = torch.std_mean(states[train_idx], (0, 1))
+    u_prev_std, u_prev_mean = torch.std_mean(prev_actions[train_idx], (0, 1))
+    po_std, po_mean = torch.std_mean(pos_obstacles[train_idx], 0)
+    do_std, do_mean = torch.std_mean(dir_obstacles[train_idx], 0)
+    norm_states = (states - x_mean) / x_std
+    norm_prev_actions = (prev_actions - u_prev_mean) / u_prev_std
+    norm_pos_obstacles = (pos_obstacles - po_mean) / po_std
+    norm_dir_obstacles = (dir_obstacles - do_mean) / do_std
+
+    # expand the obstacle data to be broadcastable with the rest
+    exp_norm_pos_obstacles = norm_pos_obstacles.unsqueeze(1).expand(-1, timesteps, -1)
+    exp_norm_dir_obstacles = norm_dir_obstacles.unsqueeze(1).expand(-1, timesteps, -1)
+
+    # split the normalized data into training, evaluation, and testing
+    train_ds, eval_ds, test_ds = (
+        TensorDataset(
+            norm_states[idx].reshape(-1, states.shape[-1]),
+            norm_prev_actions[idx].reshape(-1, prev_actions.shape[-1]),
+            exp_norm_pos_obstacles[idx].reshape(-1, pos_obstacles.shape[-1]),
+            exp_norm_dir_obstacles[idx].reshape(-1, dir_obstacles.shape[-1]),
+            cost_to_go[idx].reshape(-1),
+        )
+        for idx in (train_idx, eval_idx, test_idx)
+    )
+    return train_ds, eval_ds, test_ds, cost_to_go_ptp
+
+
 class TorchPsdNN(nn.Module):
     """Network that predicts a terminal cost as a quadratic form. The quadratic matrix
     is a positive semi-definite matrix (PSD) and is output as a Cholesky decomposition.
@@ -59,7 +106,6 @@ class TorchPsdNN(nn.Module):
         if len(hidden_features) < 1:
             raise ValueError("Psdnn must have at least one hidden layer")
         super().__init__()
-        self.context_norm = nn.BatchNorm1d(in_features, affine=False)
         features = chain([in_features], hidden_features)
         self.hidden_layers = nn.Sequential(
             *chain.from_iterable(
@@ -74,7 +120,7 @@ class TorchPsdNN(nn.Module):
         self._eps = eps
 
     def forward(self, context: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        h = self.hidden_layers(self.context_norm(context))
+        h = self.hidden_layers(context)
 
         ref = self.ref_head(h)
 
@@ -247,34 +293,11 @@ if __name__ == "__main__":
     save_filename = args.save
     torch.manual_seed(args.seed)
 
-    # load the dataset
-    dataset = load(args.dataset)
-    cost_to_go = AS_TENSOR(dataset["cost_to_go"])
-    cost_to_go_ptp = (cost_to_go.max() - cost_to_go.min()).item()
-    states = AS_TENSOR(dataset["states"])
-    prev_actions = AS_TENSOR(dataset["previous_actions"])
-    obstacles = AS_TENSOR(dataset["obstacles"])
-
-    # expand the obstacle data to be broadcastable with the rest
-    n_ep, timesteps = states.shape[:2]
-    obstacles_ = obstacles.unsqueeze(1).expand(-1, timesteps, -1, -1)
-    pos_obstacles, dir_obstacles = obstacles_[..., 0, :], obstacles_[..., 1, :]
-
-    # split the dataset episode indices into training, evaluation, and testing
-    indices = torch.arange(n_ep)
-    train_dl, eval_dl, test_dl = (
-        DataLoader(
-            TensorDataset(
-                states[idx].reshape(-1, states.shape[-1]),
-                prev_actions[idx].reshape(-1, prev_actions.shape[-1]),
-                pos_obstacles[idx].reshape(-1, pos_obstacles.shape[-1]),
-                dir_obstacles[idx].reshape(-1, dir_obstacles.shape[-1]),
-                cost_to_go[idx].reshape(-1),
-            ),
-            batch_size,
-        )
-        for idx in random_split(indices, (0.6, 0.2, 0.2))
-    )
+    # load the dataset and get the dataloaders
+    train_ds, eval_ds, test_ds, cost_to_go_ptp = load_dataset(args.dataset)
+    train_dl = DataLoader(train_ds, batch_size, None)
+    eval_dl = DataLoader(eval_ds, batch_size, None)
+    test_dl = DataLoader(test_ds, batch_size, None)
 
     # define model, loss function, and optimizer
     context_size = Env.ns + Env.na + 2 * 3 * Env.n_obstacles
