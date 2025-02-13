@@ -212,7 +212,7 @@ if __name__ == "__main__":
     group.add_argument(
         "--batch-size",
         type=int,
-        default=2**5,
+        default=2**7,
         help="Batch size.",
     )
     group.add_argument(
@@ -245,12 +245,6 @@ if __name__ == "__main__":
     batch_size = args.batch_size
     n_epochs = args.n_epochs
     save_filename = args.save
-    logging.basicConfig(
-        filename=f"{save_filename}_log.csv",
-        filemode="w",
-        level=logging.INFO,
-        format="%(message)s",
-    )
     torch.manual_seed(args.seed)
 
     # load the dataset
@@ -289,9 +283,15 @@ if __name__ == "__main__":
     optimizer = torch.optim.Adam(mdl.parameters(), args.lr, weight_decay=1e-4)
 
     # train the model
-    start = perf_counter()
+    logging.basicConfig(
+        filename=f"{save_filename}_log.csv",
+        filemode="w",
+        level=logging.INFO,
+        format="%(message)s",
+    )
     logging.info("epoch,train_loss,train_nrmse,train_r2,eval_loss,eval_nrmse,eval_r2")
     best_eval_loss = float("inf")
+    start = perf_counter()
     for t in range(n_epochs):
         t_loss, t_rmse, t_r2 = train(train_dl, mdl, loss_fn, optimizer)
         e_loss, e_rmse, e_r2 = test(eval_dl, mdl, loss_fn)
