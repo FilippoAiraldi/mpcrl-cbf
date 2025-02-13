@@ -135,7 +135,7 @@ def train(
     3 floats
         Loss function, RMSE and R2 score on the training dataset.
     """
-    loss = 0.0
+    tot_loss = 0.0
     mse = MeanSquaredError(device=DEVICE)
     r2score = R2Score(device=DEVICE)
 
@@ -147,11 +147,11 @@ def train(
         optim.step()
         optim.zero_grad()
 
-        loss += loss.item()
+        tot_loss += loss.item()
         mse.update(pred, G)
         r2score.update(pred, G)
 
-    return loss / len(dl), mse.compute().sqrt().item(), r2score.compute().item()
+    return tot_loss / len(dl), mse.compute().sqrt().item(), r2score.compute().item()
 
 
 def test(
@@ -173,7 +173,7 @@ def test(
     3 floats
         Loss function, RMSE and R2 score on the evluation dataset.
     """
-    loss = 0.0
+    tot_loss = 0.0
     mse = MeanSquaredError(device=DEVICE)
     r2score = R2Score(device=DEVICE)
 
@@ -181,11 +181,11 @@ def test(
     with torch.no_grad():
         for x, u_prev, pos_obs, dir_obs, G in dl:
             pred = model.predict_state_value(x, u_prev, pos_obs, dir_obs)
-            loss += loss_fn(pred, G).item()
+            tot_loss += loss_fn(pred, G).item()
             mse.update(pred, G)
             r2score.update(pred, G)
 
-    return loss / len(dl), mse.compute().sqrt().item(), r2score.compute().item()
+    return tot_loss / len(dl), mse.compute().sqrt().item(), r2score.compute().item()
 
 
 if __name__ == "__main__":
@@ -297,6 +297,7 @@ if __name__ == "__main__":
         e_loss, e_rmse, e_r2 = test(eval_dl, mdl, loss_fn)
         t_rmse /= cost_to_go_ptp
         e_rmse /= cost_to_go_ptp
+
         if e_loss < best_eval_loss:
             best_eval_loss = e_loss
             checkpoint = {
@@ -311,7 +312,9 @@ if __name__ == "__main__":
         print(f"Epoch: {t:>4d}/{n_epochs:>4d}, elapsed time: {elapsed_time:.2f}s")
         logging.info(f"{t},{t_loss},{t_rmse},{t_r2},{e_loss},{e_rmse},{e_r2}")
 
-    # test the model
+    # test the best model
+    checkpoint = torch.load(f"{save_filename}_best.pt")
+    mdl.load_state_dict(checkpoint["model_state_dict"])
     t_loss, t_rmse, t_r2 = test(test_dl, mdl, loss_fn)
     t_rmse /= cost_to_go_ptp
     logging.info(f"-1,{t_loss},{t_rmse},{t_r2},nan,nan,nan")  # special csv row
