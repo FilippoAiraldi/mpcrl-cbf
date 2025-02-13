@@ -31,7 +31,7 @@ def do_plotting(filenames: Sequence[str], log: bool) -> None:
         method(epochs, val_loss, label="eval")
         method(epochs[min_idx], val_loss[min_idx], "ro", label="best")
         axs[0].set_xlabel("Epoch")
-        axs[0].set_ylabel(rf"$\bf{{{fn}}}$" + "\nLoss")
+        axs[0].set_ylabel(rf"$\bf{{{fn.replace("_", r"\_")}}}$" + "\nLoss")
         if i == 0:
             axs[0].legend()
 

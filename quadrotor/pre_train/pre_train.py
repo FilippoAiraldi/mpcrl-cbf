@@ -307,9 +307,12 @@ if __name__ == "__main__":
                 "optimizer_state_dict": optimizer.state_dict(),
             }
             torch.save(checkpoint, f"{save_filename}_best.pt")
+            msg = ", better model found!"
+        else:
+            msg = ""
 
         elapsed_time = perf_counter() - start
-        print(f"Epoch: {t:>4d}/{n_epochs:>4d}, elapsed time: {elapsed_time:.2f}s")
+        print(f"Epoch: {t:>4d}/{n_epochs:>4d}, elapsed time: {elapsed_time:.2f}s" + msg)
         logging.info(f"{t},{t_loss},{t_rmse},{t_r2},{e_loss},{e_rmse},{e_r2}")
 
     # test the best model
