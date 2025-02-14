@@ -64,14 +64,16 @@ def load_dataset(
     norm_pos_obstacles = (pos_obstacles - po_mean) / po_std
     norm_dir_obstacles = (dir_obstacles - do_mean) / do_std
 
-    # expand the obstacle data to be broadcastable with the rest
+    # expand the obstacle data to be broadcastable with the rest and add previous states
     exp_norm_pos_obstacles = norm_pos_obstacles.unsqueeze(1).expand(-1, timesteps, -1)
     exp_norm_dir_obstacles = norm_dir_obstacles.unsqueeze(1).expand(-1, timesteps, -1)
+    norm_prev_states = torch.cat((norm_states[:, 0, None], norm_states[:, :-1]), dim=1)
 
     # split the normalized data into training, evaluation, and testing
     train_ds, eval_ds, test_ds = (
         TensorDataset(
             norm_states[idx].reshape(-1, states.shape[-1]),
+            norm_prev_states[idx].reshape(-1, states.shape[-1]),
             norm_prev_actions[idx].reshape(-1, prev_actions.shape[-1]),
             exp_norm_pos_obstacles[idx].reshape(-1, pos_obstacles.shape[-1]),
             exp_norm_dir_obstacles[idx].reshape(-1, dir_obstacles.shape[-1]),
@@ -144,21 +146,28 @@ class TorchPsdNN(nn.Module):
         return mat, ref
 
     def predict_state_value(
-        self, state: Tensor, prev_action: Tensor, pos_obs: Tensor, dir_obs: Tensor
+        self,
+        state: Tensor,
+        prev_state: Tensor,
+        prev_action: Tensor,
+        pos_obs: Tensor,
+        dir_obs: Tensor,
     ) -> Tensor:
-        """Computes the predicted state value for a context (state + prev action +
+        """Predicts the value of the given state and context (prev state + prev action +
         obstacles data)."""
         batches = torch.broadcast_shapes(
             state.shape[:-1],
+            prev_state.shape[:-1],
             prev_action.shape[:-1],
             pos_obs.shape[:-1],
             dir_obs.shape[:-1],
         )
         x = torch.broadcast_to(state, batches + state.shape[-1:])
+        xp = torch.broadcast_to(prev_state, batches + prev_state.shape[-1:])
         up = torch.broadcast_to(prev_action, batches + prev_action.shape[-1:])
         po = torch.broadcast_to(pos_obs, batches + pos_obs.shape[-1:])
         do = torch.broadcast_to(dir_obs, batches + dir_obs.shape[-1:])
-        context = torch.cat((x, up, po, do), dim=-1)
+        context = torch.cat((xp, up, po, do), dim=-1)
 
         L, ref = self.forward(context)
         mat = L.bmm(L.mT)
@@ -193,8 +202,8 @@ def train(
     r2score = R2Score(device=DEVICE)
 
     model.train()
-    for x, u_prev, pos_obs, dir_obs, G in dl:
-        pred = model.predict_state_value(x, u_prev, pos_obs, dir_obs)
+    for x, x_prev, u_prev, pos_obs, dir_obs, G in dl:
+        pred = model.predict_state_value(x, x_prev, u_prev, pos_obs, dir_obs)
         loss = loss_fn(pred, G)
         loss.backward()
         optim.step()
@@ -232,8 +241,8 @@ def test(
 
     model.eval()
     with torch.no_grad():
-        for x, u_prev, pos_obs, dir_obs, G in dl:
-            pred = model.predict_state_value(x, u_prev, pos_obs, dir_obs)
+        for x, x_prev, u_prev, pos_obs, dir_obs, G in dl:
+            pred = model.predict_state_value(x, x_prev, u_prev, pos_obs, dir_obs)
             tot_loss += loss_fn(pred, G).item()
             mse.update(pred, G)
             r2score.update(pred, G)
