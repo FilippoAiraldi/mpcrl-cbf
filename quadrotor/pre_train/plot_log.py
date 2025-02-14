@@ -31,7 +31,7 @@ def do_plotting(filenames: Sequence[str], log: bool) -> None:
         method(epochs, val_loss, label="eval")
         method(epochs[min_idx], val_loss[min_idx], "ro", label="best")
         axs[0].set_xlabel("Epoch")
-        axs[0].set_ylabel(rf"$\bf{{{fn.replace("_", r"\_")}}}$" + "\nLoss")
+        axs[0].set_ylabel("Loss")
         if i == 0:
             axs[0].legend()
 
@@ -41,6 +41,7 @@ def do_plotting(filenames: Sequence[str], log: bool) -> None:
         method(epochs[min_idx], val_nrmse[min_idx], "ro")
         axs[1].set_xlabel("Epoch")
         axs[1].set_ylabel("NRMSE")
+        axs[1].set_title(rf"$\bf{{{fn.replace("_", r"\_")}}}$")
 
         axs[2].plot(epochs, train_r2)
         axs[2].plot(epochs, val_r2)

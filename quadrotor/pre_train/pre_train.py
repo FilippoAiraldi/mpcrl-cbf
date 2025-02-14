@@ -10,7 +10,7 @@ from time import perf_counter
 
 import torch
 from csnlp.util.io import load
-from torch import nn
+from torch import Tensor, nn
 from torch.utils.data import DataLoader, TensorDataset, random_split
 from torcheval.metrics import MeanSquaredError, R2Score
 
@@ -27,7 +27,7 @@ AS_TENSOR = partial(torch.as_tensor, dtype=DTYPE, device=DEVICE)
 
 def load_dataset(
     filename: str, fractions: Sequence[float] = (0.6, 0.2, 0.2)
-) -> tuple[TensorDataset, TensorDataset, TensorDataset, float]:
+) -> tuple[TensorDataset, TensorDataset, TensorDataset, dict[str, Tensor], float]:
     """Loads the dataset and splits it into training, evaluation, and testing datasets.
     Also normalizes the input data."""
     # load the dataset
@@ -46,11 +46,21 @@ def load_dataset(
 
     # normalize input data via the training means and stds
     x_std, x_mean = torch.std_mean(states[train_idx], (0, 1))
-    u_prev_std, u_prev_mean = torch.std_mean(prev_actions[train_idx], (0, 1))
+    up_std, up_mean = torch.std_mean(prev_actions[train_idx], (0, 1))
     po_std, po_mean = torch.std_mean(pos_obstacles[train_idx], 0)
     do_std, do_mean = torch.std_mean(dir_obstacles[train_idx], 0)
+    normalizations = {
+        "state_mean": x_mean.cpu(),
+        "state_std": x_std.cpu(),
+        "action_mean": up_mean.cpu(),
+        "action_std": up_std.cpu(),
+        "pos_obs_mean": po_mean.cpu(),
+        "pos_obs_std": po_std.cpu(),
+        "dir_obs_mean": do_mean.cpu(),
+        "dir_obs_std": do_std.cpu(),
+    }
     norm_states = (states - x_mean) / x_std
-    norm_prev_actions = (prev_actions - u_prev_mean) / u_prev_std
+    norm_prev_actions = (prev_actions - up_mean) / up_std
     norm_pos_obstacles = (pos_obstacles - po_mean) / po_std
     norm_dir_obstacles = (dir_obstacles - do_mean) / do_std
 
@@ -69,7 +79,8 @@ def load_dataset(
         )
         for idx in (train_idx, eval_idx, test_idx)
     )
-    return train_ds, eval_ds, test_ds, cost_to_go_ptp
+
+    return train_ds, eval_ds, test_ds, normalizations, cost_to_go_ptp
 
 
 class TorchPsdNN(nn.Module):
@@ -119,7 +130,7 @@ class TorchPsdNN(nn.Module):
         self._xf = AS_TENSOR(Env.xf)
         self._eps = eps
 
-    def forward(self, context: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, context: Tensor) -> tuple[Tensor, Tensor]:
         h = self.hidden_layers(context)
 
         ref = self.ref_head(h)
@@ -133,12 +144,8 @@ class TorchPsdNN(nn.Module):
         return mat, ref
 
     def predict_state_value(
-        self,
-        state: torch.Tensor,
-        prev_action: torch.Tensor,
-        pos_obs: torch.Tensor,
-        dir_obs: torch.Tensor,
-    ) -> torch.Tensor:
+        self, state: Tensor, prev_action: Tensor, pos_obs: Tensor, dir_obs: Tensor
+    ) -> Tensor:
         """Computes the predicted state value for a context (state + prev action +
         obstacles data)."""
         batches = torch.broadcast_shapes(
@@ -294,7 +301,7 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
 
     # load the dataset and get the dataloaders
-    train_ds, eval_ds, test_ds, cost_to_go_ptp = load_dataset(args.dataset)
+    train_ds, eval_ds, test_ds, norm, cost_to_go_ptp = load_dataset(args.dataset)
     train_dl = DataLoader(train_ds, batch_size, None)
     eval_dl = DataLoader(eval_ds, batch_size, None)
     test_dl = DataLoader(test_ds, batch_size, None)
@@ -328,6 +335,7 @@ if __name__ == "__main__":
                 "epoch": t,
                 "model_state_dict": mdl.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
+                "normalization": norm,
             }
             torch.save(checkpoint, f"{save_filename}_best.pt")
             msg = ", better model found!"
