@@ -309,7 +309,7 @@ if __name__ == "__main__":
     # define model, loss function, and optimizer
     context_size = Env.ns + Env.na + 2 * 3 * Env.n_obstacles
     mdl = TorchPsdNN(context_size, args.psdnn_hidden, Env.ns).to(DEVICE, DTYPE)
-    loss_fn = nn.MSELoss()
+    loss_fn = lambda x, y: (x.log() - y.log()).square().mean()
     optimizer = torch.optim.Adam(mdl.parameters(), args.lr, weight_decay=1e-4)
 
     # train the model
