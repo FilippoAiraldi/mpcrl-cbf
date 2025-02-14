@@ -302,9 +302,9 @@ if __name__ == "__main__":
 
     # load the dataset and get the dataloaders
     train_ds, eval_ds, test_ds, norm, cost_to_go_ptp = load_dataset(args.dataset)
-    train_dl = DataLoader(train_ds, batch_size, None)
-    eval_dl = DataLoader(eval_ds, batch_size, None)
-    test_dl = DataLoader(test_ds, batch_size, None)
+    train_dl = DataLoader(train_ds, batch_size, True)
+    eval_dl = DataLoader(eval_ds, batch_size)
+    test_dl = DataLoader(test_ds, batch_size)
 
     # define model, loss function, and optimizer
     context_size = Env.ns + Env.na + 2 * 3 * Env.n_obstacles
