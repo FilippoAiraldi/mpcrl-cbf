@@ -176,6 +176,13 @@ class TorchPsdNN(nn.Module):
         return dx.mT.bmm(mat.bmm(dx)).squeeze((-1, -2))
 
 
+class MSLELoss(nn.MSELoss):
+    """Mean Squared Logarithmic Error loss."""
+
+    def forward(self, input: Tensor, target: Tensor) -> Tensor:
+        return super().forward(input.log1p(), target.log1p())
+
+
 def train(
     dl: DataLoader, model: TorchPsdNN, loss_fn: Callable, optim: torch.optim.Optimizer
 ) -> tuple[float, float, float]:
@@ -318,7 +325,7 @@ if __name__ == "__main__":
     # define model, loss function, and optimizer
     context_size = Env.ns + Env.na + 2 * 3 * Env.n_obstacles
     mdl = TorchPsdNN(context_size, args.psdnn_hidden, Env.ns).to(DEVICE, DTYPE)
-    loss_fn = lambda x, y: (x.log() - y.log()).square().mean()
+    loss_fn = MSLELoss()
     optimizer = torch.optim.Adam(mdl.parameters(), args.lr, weight_decay=1e-4)
 
     # train the model
