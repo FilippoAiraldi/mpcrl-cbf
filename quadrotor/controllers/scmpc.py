@@ -8,7 +8,7 @@ from controllers.mpc import get_discrete_time_dynamics
 from csnlp import Nlp
 from csnlp.wrappers import ScenarioBasedMpc
 from csnn import ReLU, Sigmoid, init_parameters
-from csnn.convex import PsdNN, PwqNN
+from csnn.convex import PsdNN
 from csnn.feedforward import Mlp
 from env import QuadrotorEnv as Env
 from mpcrl.util.seeding import RngType
@@ -25,14 +25,13 @@ def create_scmpc(
     use_kappann: bool,
     soft: bool,
     bound_initial_state: bool,
-    terminal_cost: set[Literal["dlqr", "pwqnn", "psdnn"]],
+    terminal_cost: set[Literal["dlqr", "psdnn"]],
     kappann_hidden_size: Sequence[int],
-    pwqnn_hidden_size: int,
     psdnn_hidden_sizes: Sequence[int],
     env: Env | None = None,
     *_: Any,
     **__: Any,
-) -> tuple[ScenarioBasedMpc[cs.MX], Mlp | None, PwqNN | None, PsdNN | None]:
+) -> tuple[ScenarioBasedMpc[cs.MX], Mlp | None, PsdNN | None]:
     """Creates a nonlinear MPC controller for the `QuadrotorEnv` environment.
 
     Parameters
@@ -54,18 +53,15 @@ def create_scmpc(
         If `False`, the initial state is excluded from the state constraints. Otherwise,
         the initial state is also constrained (useful for RL for predicting the value
         functions of the current state). Disregarded if `dcbf` is `True`.
-    terminal_cost : set of {"dlqr", "pwqnn", "psdnn"}
+    terminal_cost : set of {"dlqr", "psdnn"}
         The type of terminal cost to use. If "dlqr", the terminal cost is the solution
-        to the discrete-time LQR problem. If "pwqnn", a piecewise quadratic neural
-        network is used to approximate the terminal cost. If "psdnn", a positive
-        semidefinite neural network is used to approximate the terminal cost. Can also
-        be a set of multiple terminal costs to use, at which point these are summed
-        together; can also be an empty set, in which case no terminal cost is used.
+        to the discrete-time LQR problem. If "psdnn", a positive semidefinite neural
+        network is used to approximate the terminal cost. Can also be a set of multiple
+        terminal costs to use, at which point these are summed together; can also be an
+        empty set, in which case no terminal cost is used.
     kappann_hidden_size : sequence of int
         The number of hidden units in the multilayer perceptron used to learn the
         DCBF Kappa function, if `dcbf` is `True`.
-    pwqnn_hidden_size : int
-        The number of hidden units in the piecewise quadratic neural network, if used.
     psdnn_hidden_sizes : sequence of int
         The number of hidden units in the positive semidefinite neural network, if used.
     env : Env | None, optional
@@ -74,12 +70,10 @@ def create_scmpc(
 
     Returns
     -------
-    Mpc, Mlp (optional), PwqNN (optional), and PsdNN (optional)
+    Mpc, Mlp (optional), and PsdNN (optional)
         The multiple-shooting nonlinear MPC controller; the multilayer perceptron if
-        `dcbf` is `True`, otherwise `None`; the piecewise quadratic terminal cost neural
-        net if `"pwqnn"` is in `terminal_cost`, otherwise `None`.; the positive
-        semidefinite terminal cost neural net if `"psdnn"` is in `terminal_cost`,
-        otherwise `None`.
+        `dcbf` is `True`, otherwise `None`; the positive semidefinite terminal cost
+        neural net if `"psdnn"` is in `terminal_cost`, otherwise `None`.
     """
     if env is None:
         env = Env(0)
@@ -141,29 +135,12 @@ def create_scmpc(
     J = sum(cs.sumsqr(Q * dx[:, i]) + cs.sumsqr(R * u[:, i]) for i in range(horizon))
 
     # compute terminal cost
-    pwqnn = psdnn = None
+    psdnn = None
     if "dlqr" in terminal_cost:
         ldynamics = dtdynamics.factory("dyn_lin", ("x", "u"), ("jac:xf:x", "jac:xf:u"))
         A, B = ldynamics(env.xf, env.a0)
         P = dlqr(A.toarray(), B.toarray(), env.Q, env.R)
         J += cs.bilin(P, dx[:, -1])
-
-    if "pwqnn" in terminal_cost:
-        # NOTE: the PWQ NN is not made aware of the positions and directions of the
-        # obstacles (since they are not passed as inputs), so its context is limited to
-        # the quadrotor's state
-        pwqnn = PwqNN(ns, pwqnn_hidden_size)
-        nnfunc = nn2function(pwqnn, "pwqnn")
-        nnfunc = nnfunc.factory("F", nnfunc.name_in(), ("y", "grad:y:x", "hess:y:x:x"))
-        weights = {
-            n: scmpc.parameter(n, p.shape)
-            for n, p in pwqnn.parameters(prefix="pwqnn", skip_none=True)
-        }
-        output = nnfunc(x=x0 - env.xf, **weights)
-        dxT = x[:, -1] - x0
-        val, jac, hess = output["y"], output["grad_y_x"], output["hess_y_x_x"]
-        J += val + cs.dot(jac, dxT) + 0.5 * cs.bilin(hess, dxT)
-
     if "psdnn" in terminal_cost:
         in_features = ns + no * 6  # 3 positions + 3 directions
         psdnn = PsdNN(in_features, psdnn_hidden_sizes, ns, "tril")
@@ -183,7 +160,7 @@ def create_scmpc(
     scmpc.minimize_from_single(J)
     solver = "ipopt"
     scmpc.init_solver(SOLVER_OPTS[solver], solver, type="nlp")
-    return scmpc, kappann, pwqnn, psdnn
+    return scmpc, kappann, psdnn
 
 
 def get_scmpc_controller(
@@ -218,7 +195,7 @@ def get_scmpc_controller(
         function (used only for saving to disk for plotting).
     """
     # create the MPC
-    scmpc, kappann, pwqnn, psdnn = create_scmpc(*args, **kwargs)
+    scmpc, kappann, psdnn = create_scmpc(*args, **kwargs)
 
     # group its parameters (if any) into a dict and assign numerical values to them
     sym_weights_, num_weights_ = {}, {}
@@ -237,14 +214,10 @@ def get_scmpc_controller(
             num_weights_[n] = weight
     else:
         # initialize NN weights randomly
-        for nn, prefix in [(kappann, "kappann"), (pwqnn, "pwqnn"), (psdnn, "psdnn")]:
+        for nn, prefix in [(kappann, "kappann"), (psdnn, "psdnn")]:
             if nn is None:
                 continue
-            nn_weights_ = dict(
-                nn.init_parameters(prefix=prefix, seed=seed)
-                if hasattr(nn, "init_parameters")
-                else init_parameters(nn, prefix=prefix, seed=seed)
-            )
+            nn_weights_ = dict(init_parameters(nn, prefix=prefix, seed=seed))
             sym_weights_.update((k, scmpc.parameters[k]) for k in nn_weights_)
             num_weights_.update(nn_weights_)
 

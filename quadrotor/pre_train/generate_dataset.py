@@ -186,7 +186,6 @@ if __name__ == "__main__":
         "bound_initial_state": False,
         "terminal_cost": set(),
         "kappann_hidden_size": [],
-        "pwqnn_hidden_size": 0,
         "psdnn_hidden_sizes": [],
     }
     timesteps = args.timesteps

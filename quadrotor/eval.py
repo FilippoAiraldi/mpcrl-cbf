@@ -13,7 +13,7 @@ sys.path.append(str(repo_dir))
 
 from env import QuadrotorEnv as Env
 
-from util.defaults import KAPPANN_HIDDEN, PSDNN_HIDDEN, PWQNN_HIDDEN
+from util.defaults import KAPPANN_HIDDEN, PSDNN_HIDDEN
 
 
 def get_controller(
@@ -176,16 +176,10 @@ if __name__ == "__main__":
     )
     group.add_argument(
         "--terminal-cost",
-        choices=("dlqr", "pwqnn", "psdnn"),
+        choices=("dlqr", "psdnn"),
         nargs="*",
         default=set(),
         help="Which type of terminal cost to use in the MPC controller.",
-    )
-    group.add_argument(
-        "--pwqnn-hidden",
-        type=int,
-        default=PWQNN_HIDDEN,
-        help="The number of hidden units in the PWQNN terminal cost, if used.",
     )
     group.add_argument(
         "--psdnn-hidden",
@@ -257,7 +251,6 @@ if __name__ == "__main__":
             "soft",
             "bound_initial_state",
             "terminal_cost",
-            "pwqnn_hidden",
             "psdnn_hidden",
             "scenarios",
             "timesteps",
@@ -281,7 +274,6 @@ if __name__ == "__main__":
         "terminal_cost": tcost,
         "scenarios": args.scenarios,
         "kappann_hidden_size": args.kappann_hidden,
-        "pwqnn_hidden_size": args.pwqnn_hidden,
         "psdnn_hidden_sizes": args.psdnn_hidden,
     }
     n_eval = args.n_eval

@@ -18,7 +18,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from controllers.scmpc import create_scmpc
 from env import QuadrotorEnv as Env
 
-from util.defaults import KAPPANN_HIDDEN, PSDNN_HIDDEN, PWQNN_HIDDEN
+from util.defaults import KAPPANN_HIDDEN, PSDNN_HIDDEN
 from util.wrappers import RecordSolverTime
 
 
@@ -114,7 +114,7 @@ def train_one_agent(
 
     # create the SCMPC controller
     set_sym_type("MX")
-    scmpc, kappann, pwqnn, psdnn = create_scmpc(**scmpc_kwargs, env=env)
+    scmpc, kappann, psdnn = create_scmpc(**scmpc_kwargs, env=env)
     scmpc = RecordSolverTime(scmpc)
 
     # initialize learnable parameters
@@ -125,17 +125,6 @@ def train_one_agent(
             LearnableParameter(name, weight.shape, weight, sym=sym_pars[name])
             for name, weight in init_parameters(kappann, prefix="kappann", seed=rng)
         )
-    if pwqnn is not None:
-        for name, weight in pwqnn.init_parameters(prefix="pwqnn", seed=rng):
-            if name.endswith("dot.weight"):
-                lb, ub = 0.0, np.inf  # force convexity of nn function
-            elif name.endswith("input_layer.bias"):
-                lb, ub = -np.inf, 0.0  # force value at origin to be close to zero
-            else:
-                lb, ub = -np.inf, np.inf
-            learnable_pars_.append(
-                LearnableParameter(name, weight.shape, weight, lb, ub, sym_pars[name])
-            )
     if psdnn is not None:
         learnable_pars_.extend(
             LearnableParameter(name, weight.shape, weight, sym=sym_pars[name])
@@ -277,16 +266,10 @@ if __name__ == "__main__":
     )
     group.add_argument(
         "--terminal-cost",
-        choices=("dlqr", "pwqnn", "psdnn"),
+        choices=("dlqr", "psdnn"),
         nargs="*",
         default={"psdnn"},
         help="Which type of terminal cost to use in the SCMPC controller.",
-    )
-    group.add_argument(
-        "--pwqnn-hidden",
-        type=int,
-        default=PWQNN_HIDDEN,
-        help="The number of hidden units in the PWQNN terminal cost, if used.",
     )
     group.add_argument(
         "--psdnn-hidden",
@@ -343,7 +326,6 @@ if __name__ == "__main__":
         "terminal_cost": args.terminal_cost,
         "scenarios": args.scenarios,
         "kappann_hidden_size": args.kappann_hidden,
-        "pwqnn_hidden_size": args.pwqnn_hidden,
         "psdnn_hidden_sizes": args.psdnn_hidden,
     }
     lr = args.lr
