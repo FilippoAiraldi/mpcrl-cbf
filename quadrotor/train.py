@@ -61,6 +61,7 @@ def train_one_agent(
     exploration_strength: tuple[npt.NDArray[np.floating], float],
     episodes: int,
     timesteps: int,
+    pretrained_psdnn_weights: dict[str, npt.NDArray[np.floating]] | None,
     seed: RngType,
     n: int,
 ) -> tuple[
@@ -92,6 +93,8 @@ def train_one_agent(
         The number of episodes to train the agent for
     timesteps : int
         The number of timesteps to run each evaluation for.
+    pretrained_psdnn_weights : dict of str to array of float, optional
+        The weights of the PSDNN terminal cost from a pre-trained model.
     seed : int
         The seed for the random number generator.
     n : int
@@ -126,9 +129,14 @@ def train_one_agent(
             for name, weight in init_parameters(kappann, prefix="kappann", seed=rng)
         )
     if psdnn is not None:
+        source = (
+            pretrained_psdnn_weights.items()
+            if pretrained_psdnn_weights
+            else init_parameters(psdnn, prefix="psdnn", seed=rng)
+        )
         learnable_pars_.extend(
             LearnableParameter(name, weight.shape, weight, sym=sym_pars[name])
-            for name, weight in init_parameters(psdnn, prefix="psdnn", seed=rng)
+            for name, weight in source
         )
     for name in ("Q", "R"):
         learnable_pars_.append(
@@ -278,6 +286,12 @@ if __name__ == "__main__":
         nargs=2,
         help="The number of hidden units in the PSDNN terminal cost, if used.",
     )
+    group.add_argument(
+        "--from-pre-train",
+        type=str,
+        default="",
+        help="Loads pre-trained PsdNN weights from the specified file.",
+    )
     group = parser.add_argument_group("Simulation options")
     group.add_argument(
         "--n-agents", type=int, default=10, help="Number of agents to train."
@@ -315,6 +329,25 @@ if __name__ == "__main__":
     args.terminal_cost = set(args.terminal_cost)
     print(f"Args: {args}\n")
 
+    # if specified, load the initial weights for the PSDNN terminal cost from a
+    # pre-trained model
+    if args.from_pre_train:
+        import torch
+
+        data = torch.load(args.from_pre_train, weights_only=True)
+        expected_shape = data["args"]["psdnn_hidden"]
+        if not np.array_equal(args.psdnn_hidden, expected_shape):
+            raise ValueError(
+                f"Hidden sizes mismatch: {args.psdnn_hidden} != {expected_shape}"
+            )
+        pt_weights = {}
+        for name, weight in data["model_state_dict"].items():
+            if name.endswith(".bias"):
+                weight = weight.reshape(1, -1)
+            pt_weights["psdnn." + name] = weight.numpy(force=True).astype(np.float64)
+    else:
+        pt_weights = None
+
     # prepare arguments to the training simulation
     algo = args.algorithm
     scmpc_kwargs = {
@@ -341,7 +374,7 @@ if __name__ == "__main__":
     # run the simulations (possibly in parallel asynchronously)
     data = Parallel(n_jobs=args.n_jobs, verbose=10, return_as="generator_unordered")(
         delayed(train_one_agent)(
-            algo, scmpc_kwargs, lr, eps, strength, n_episodes, ts, seed, i
+            algo, scmpc_kwargs, lr, eps, strength, n_episodes, ts, pt_weights, seed, i
         )
         for i, seed in enumerate(seeds)
     )

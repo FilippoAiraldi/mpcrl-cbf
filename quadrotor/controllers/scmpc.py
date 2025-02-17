@@ -14,7 +14,7 @@ from env import QuadrotorEnv as Env
 from mpcrl.util.seeding import RngType
 from scipy.linalg import solve_discrete_are as dlqr
 
-from util.defaults import DCBF_GAMMA, SOLVER_OPTS, TIME_MEAS
+from util.defaults import CONTEXT_NORMALIZATION, DCBF_GAMMA, SOLVER_OPTS, TIME_MEAS
 from util.nn import nn2function
 
 
@@ -101,12 +101,14 @@ def create_scmpc(
     no = env.n_obstacles
     pos_obs = scmpc.parameter("pos_obs", (3, no))
     dir_obs = scmpc.parameter("dir_obs", (3, no))
-    context = cs.veccat(x0, pos_obs, dir_obs)
+    context = (
+        cs.veccat(x0, u_prev, pos_obs, dir_obs) - CONTEXT_NORMALIZATION[0]
+    ) / CONTEXT_NORMALIZATION[1]
     kappann = None
     if dcbf:
         h = env.safety_constraints(x, pos_obs, dir_obs)
         if use_kappann:
-            in_features = ns + no * 6  # 3 positions + 3 directions
+            in_features = ns + na + no * 6  # 3 positions + 3 directions
             features = [in_features, *kappann_hidden_size, no]
             activations = [ReLU] * len(kappann_hidden_size) + [Sigmoid]
             kappann = Mlp(features, activations)
@@ -142,15 +144,14 @@ def create_scmpc(
         P = dlqr(A.toarray(), B.toarray(), env.Q, env.R)
         J += cs.bilin(P, dx[:, -1])
     if "psdnn" in terminal_cost:
-        in_features = ns + no * 6  # 3 positions + 3 directions
+        in_features = ns + na + no * 6  # 3 positions + 3 directions
         psdnn = PsdNN(in_features, psdnn_hidden_sizes, ns, "tril")
         nnfunc = nn2function(psdnn, "psdnn")
         weights = {
             n: scmpc.parameter(n, p.shape)
             for n, p in psdnn.parameters(prefix="psdnn", skip_none=True)
         }
-        L = nnfunc(x=context, **weights)["y"]
-        J += cs.bilin(L @ L.T, dx[:, -1])
+        J += nnfunc(x=dx[:, -1], context=context, **weights)["y"]
 
     # add penalty cost (if needed)
     if soft:

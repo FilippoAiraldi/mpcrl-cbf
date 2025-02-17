@@ -1,15 +1,15 @@
 import casadi as cs
-from csnn import Module
+from csnn.convex import PsdNN, PwqNN
+from csnn.feedforward import Mlp
 
 
-def nn2function(net: Module, prefix: str) -> cs.Function:
+def nn2function(net: Mlp | PsdNN | PwqNN, prefix: str) -> cs.Function:
     """Converts a neural network model into a CasADi function.
 
     Parameters
     ----------
-    net : Module
-        The neural network that must be converted to a function. Must either possess
-        an `input_layer` attribute or a `layers` attribute.
+    net : Mlp, PsdNN, or PwqNN
+        The neural network that must be converted to a function.
     prefix : str
         Prefix to add in front of the net's parameters. Used also to name the CasADi
         function.
@@ -18,32 +18,41 @@ def nn2function(net: Module, prefix: str) -> cs.Function:
     -------
     cs.Function
         A CasADi function with signature `"input" x "parameters" -> "output"`.
-
-    Raises
-    ------
-    ValueError
-        If the neural network model input layer cannot be identified.
     """
-    if hasattr(net, "input_layer"):
-        in_features = net.input_layer.in_features
-    elif hasattr(net, "layers"):
-        in_features = net.layers[0].in_features
+    if isinstance(net, (Mlp, PwqNN)):
+        in_features = (
+            net.input_layer.in_features
+            if isinstance(net, PwqNN)
+            else net.layers[0].in_features
+        )
+        x = net.sym_type.sym("x", in_features, 1)
+
+        inputs = [x]
+        input_names = ["x"]
+        raw_output = net.forward(x.T)
+
+    elif isinstance(net, PsdNN):
+        in_features = net.hidden_layers[0].in_features
+        out_features = net.ref_head.weight.size1()
+        context = net.sym_type.sym("x", in_features, 1)
+        x = net.sym_type.sym("x", out_features, 1)
+
+        inputs = [x, context]
+        input_names = ["x", "context"]
+        raw_output = net.quadform(x.T, context.T)
+
     else:
         raise ValueError(
             "The neural network model must be an instance of Mlp, PwqNN or PsdNN."
         )
-    x = net.sym_type.sym("x", in_features, 1)
 
-    output = net.forward(x.T)
-    if output.is_row():
-        output = output.T
-
+    outputs = [cs.simplify(raw_output.T if raw_output.is_row() else raw_output)]
     parameters = dict(net.parameters(prefix=prefix, skip_none=True))
     return cs.Function(
         prefix,
-        [x] + list(parameters.values()),
-        [cs.simplify(output)],
-        ["x"] + list(parameters.keys()),
+        inputs + list(parameters.values()),
+        outputs,
+        input_names + list(parameters.keys()),
         ["y"],
         {"cse": True},
     )
