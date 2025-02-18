@@ -1,6 +1,6 @@
 import sys
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from math import ceil
 from pathlib import Path
@@ -18,10 +18,13 @@ sys.path.append(str(quadrotor_dir))
 from quadrotor.env import QuadrotorEnv as Env
 from quadrotor.eval import get_controller
 
+CONTROLLER_CACHE: dict[int, Callable] = {}
+
 
 def simulate_controller_once(
     controller_name: Literal["mpc", "scmpc"],
     controller_kwargs: dict[str, Any],
+    horizons: Sequence[int],
     n_ep: int,
     timesteps: int,
     initial_conditions: Sequence[npt.NDArray[np.float64]],
@@ -31,9 +34,12 @@ def simulate_controller_once(
 
     Parameters
     ----------
-    controller : callable
-        A controller that takes the current state and the environment as input and
-        returns the control input for the next timestep. Also has a `reset` method.
+    controller_name : {"mpc", "scmpc"}
+        The name of the controller to return.
+    controller_kwargs : dict of str to any
+        The arguments to pass to the controller instantiation.
+    horizons : sqeuence of int
+        The horizons of the controller, one per episode.
     n_ep : int
         The number of episodes to run for this controller.
     timesteps : int
@@ -53,13 +59,20 @@ def simulate_controller_once(
          - an array containing the obstacles positions and direction for each episode.
     """
     env = Env(timesteps)
-    controller, _ = get_controller(controller_name, **controller_kwargs)
     R = np.empty((n_ep, timesteps))
     U_prev = np.empty((n_ep, timesteps, env.na))
     X = np.empty((n_ep, timesteps, env.ns))
     obstacles = np.empty((n_ep, 2, *env.safety_constraints.size_in(1)))
 
-    for e, (seed, ic) in enumerate(zip(seeds, initial_conditions)):
+    for e, (seed, ic, h) in enumerate(zip(seeds, initial_conditions, horizons)):
+        if h in CONTROLLER_CACHE:
+            controller = CONTROLLER_CACHE[h]
+        else:
+            controller, _ = get_controller(
+                controller_name, **controller_kwargs, horizon=h
+            )
+            CONTROLLER_CACHE[h] = controller
+
         controller.reset()
         x, _ = env.reset(seed=int(seed), options={"ic": ic})
         obstacles[e] = env.pos_obs, env.dir_obs
@@ -69,12 +82,14 @@ def simulate_controller_once(
             u, _ = controller(x, env)
             x, r, _, _, _ = env.step(u)
             R[e, t] = r
+
     return R, X, U_prev, obstacles
 
 
 def generate_dataset_chunk(
     controller_name: Literal["mpc", "scmpc"],
     controller_kwargs: dict[str, Any],
+    horizons: Sequence[int],
     n_ep: int,
     timesteps: int,
     initial_conditions: Sequence[npt.NDArray[np.float64]],
@@ -84,9 +99,12 @@ def generate_dataset_chunk(
 
     Parameters
     ----------
-    controller : callable
-        A controller that takes the current state and the environment as input and
-        returns the control input for the next timestep. Also has a `reset` method.
+    controller_name : {"mpc", "scmpc"}
+        The name of the controller to return.
+    controller_kwargs : dict of str to any
+        The arguments to pass to the controller instantiation.
+    horizons : sqeuence of int
+        The horizons of the controller, one per episode.
     n_ep : int
         The number of episodes to run for this controller.
     timesteps : int
@@ -106,7 +124,13 @@ def generate_dataset_chunk(
          - an array containing the obstacle data input for the pre-training
     """
     R, X, U_prev, obstacles = simulate_controller_once(
-        controller_name, controller_kwargs, n_ep, timesteps, initial_conditions, seeds
+        controller_name,
+        controller_kwargs,
+        horizons,
+        n_ep,
+        timesteps,
+        initial_conditions,
+        seeds,
     )
     obstacles_ = obstacles.reshape(n_ep, 2, -1, order="F")  # same orientation as casadi
     G = R[:, ::-1].cumsum(1)[:, ::-1]  # compute cost-to-go
@@ -127,10 +151,12 @@ if __name__ == "__main__":
     )
     group = parser.add_argument_group("MPC options")
     group.add_argument(
-        "--horizon",
+        "--horizons",
         type=int,
-        default=10,
-        help="The horizon of the MPC controller.",
+        default=[2, 5, 10],
+        nargs="+",
+        help="The horizons of the MPC controller. The horizons will be assigned "
+        "reasonably equally to episodes.",
     )
     group.add_argument(
         "--soft",
@@ -177,7 +203,6 @@ if __name__ == "__main__":
     n_jobs = args.n_jobs
     controller = args.controller
     controller_kwargs = {
-        "horizon": args.horizon,
         "soft": args.soft,
         "scenarios": args.scenarios,
         # kwargs below are default
@@ -193,7 +218,7 @@ if __name__ == "__main__":
     n_ep_per_job = ceil(n_ep / n_jobs)  # round up
 
     # generate all seeds at once to ensure reproducibility, and generate random initial
-    # conditions for each episode
+    # conditions for each episode. Also assign one horizon to each episode.
     seed = args.seed
     seeds = (
         np.random.SeedSequence(seed)
@@ -201,15 +226,19 @@ if __name__ == "__main__":
         .reshape(n_jobs, n_ep_per_job)
     )
     initial_conditions = np.random.default_rng(seed).normal(
-        Env.x0, [1.0, 1.0, 3.0, 1.0, 1.0, 1.0], (n_jobs, n_ep_per_job, Env.ns)
+        Env.x0, [1.0, 1.0, 2.0, 1.0, 1.0, 1.0], (n_jobs, n_ep_per_job, Env.ns)
     )
+    horizons = np.array_split(np.arange(n_ep_per_job * n_jobs), len(args.horizons))
+    for arr, h in zip(horizons, args.horizons):
+        arr.fill(h)
+    horizons = np.concatenate(horizons).reshape(n_jobs, n_ep_per_job)
 
     # simulate the controllers in parallel, and save dataset to disk
     data = Parallel(n_jobs, verbose=10, return_as="generator_unordered")(
         delayed(generate_dataset_chunk)(
-            controller, controller_kwargs, n_ep_per_job, timesteps, ics_, seeds_
+            controller, controller_kwargs, h_, n_ep_per_job, timesteps, ics_, seeds_
         )
-        for ics_, seeds_ in zip(initial_conditions, seeds)
+        for ics_, seeds_, h_ in zip(initial_conditions, seeds, horizons)
     )
     cost_to_go, states, prev_actions, obstacles = map(np.concatenate, zip(*data))
     save(
