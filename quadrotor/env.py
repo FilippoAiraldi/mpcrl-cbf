@@ -4,6 +4,7 @@ import casadi as cs
 import gymnasium as gym
 import numpy as np
 import numpy.typing as npt
+from scipy.stats import truncnorm
 
 from util.loose_box import LooseBox
 
@@ -85,7 +86,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
     constraint_penalty = 1e3  # penalty for bumping into obstacles
 
     # noise
-    action_noise_bound = (a_ub - a_lb) / 10.0
+    action_noise_scale = (a_ub - a_lb) / 10.0
 
     def __init__(self, max_timesteps: int) -> None:
         super().__init__()
@@ -205,8 +206,12 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         """
         if length is None:
             length = self._max_timesteps
-        return self.np_random.uniform(
-            -self.action_noise_bound, self.action_noise_bound, size=(n, length, self.nd)
+        return truncnorm.rvs(
+            self.a_lb,
+            self.a_ub,
+            scale=self.action_noise_scale,
+            random_state=self.np_random,
+            size=(n, length, self.nd),
         )
 
 
