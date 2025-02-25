@@ -400,8 +400,8 @@ if __name__ == "__main__":
         import matplotlib.pyplot as plt
         from plot import plot_returns, plot_solver_times, plot_training
 
-        data, args = [data_dict], [args.__dict__]
-        plot_returns(data)
-        plot_solver_times(data)
+        data, args, names = [data_dict], [args.__dict__], ["train"]
+        plot_returns(data, names)
+        plot_solver_times(data, names)
         plot_training(data)
         plt.show()

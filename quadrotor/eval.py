@@ -311,10 +311,10 @@ if __name__ == "__main__":
             plot_states_and_actions,
         )
 
-        data = [data_dict]
+        data, names = [data_dict], ["eval"]
         plot_states_and_actions(data)
         plot_action_bounds(data)
-        plot_safety(data)
-        plot_returns(data)
-        plot_solver_times(data)
+        plot_safety(data, names)
+        plot_returns(data, names)
+        plot_solver_times(data, names)
         plt.show()
