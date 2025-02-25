@@ -255,9 +255,9 @@ def plot_safety(
             }
         )
 
-        features = tuple(
+        features = [
             w.shape[-1] for n, w in kappann_weights.items() if n.endswith(".weight")
-        ) + (n_obs,)
+        ] + [n_obs]
         assert features[0] == ns + n_obs * 6, "Invalid input features."
         if features in kappann_cache:
             nnfunc = kappann_cache[features]

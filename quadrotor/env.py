@@ -93,13 +93,11 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         self.action_space = LooseBox(self.a_lb, self.a_ub, (self.na,), np.float64)
         self._max_timesteps = max_timesteps
 
-        # build also the symbolic dynamics and safety constraints for 3 cylindrical
-        # obstacles
+        # build the symbolic dynamics
         x = cs.MX.sym("x", self.ns)
         u = cs.MX.sym("u", self.na)
         pos, vel = x[:3], x[3:]
         az, phi, theta, psi = u[0], u[1], u[2], u[3]
-
         cphi, sphi = cs.cos(phi), cs.sin(phi)
         ctheta, stheta = cs.cos(theta), cs.sin(theta)
         cpsi, spsi = cs.cos(psi), cs.sin(psi)
@@ -115,6 +113,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         )
         self.integrator = cs.integrator("intg", "cvodes", ode, 0.0, self.sampling_time)
 
+        # build the symbolic safety constraint for the cylindrical obstacle
         pos_obs = cs.MX.sym("p_o", (3, self.n_obstacles))
         dir_obs = cs.MX.sym("d_o", (3, self.n_obstacles))  # unit vectors
         r2 = self.radius_obstacles**2
@@ -153,7 +152,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         self._x = x
         self._t = 0
         self._u_prev = self.a0
-        return x, {"pos_obs": self.pos_obs, "dir_obs": self.dir_obs}
+        return x, {}
 
     def step(
         self, action: npt.ArrayLike
