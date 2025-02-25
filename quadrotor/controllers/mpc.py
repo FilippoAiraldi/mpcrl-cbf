@@ -9,12 +9,13 @@ from csnlp.wrappers import Mpc
 from csnn import ReLU, Sigmoid, init_parameters
 from csnn.convex import PsdNN
 from csnn.feedforward import Mlp
+from env import NORMALIZATION
 from env import QuadrotorEnv as Env
 from mpcrl.util.control import rk4
 from mpcrl.util.seeding import RngType
 from scipy.linalg import solve_discrete_are as dlqr
 
-from util.defaults import CONTEXT_NORMALIZATION, DCBF_GAMMA, SOLVER_OPTS, TIME_MEAS
+from util.defaults import DCBF_GAMMA, SOLVER_OPTS, TIME_MEAS
 from util.nn import nn2function
 
 
@@ -133,8 +134,8 @@ def create_mpc(
     pos_obs = mpc.parameter("pos_obs", (3, no))
     dir_obs = mpc.parameter("dir_obs", (3, no))
     context = (
-        cs.veccat(x0, u_prev, pos_obs, dir_obs) - CONTEXT_NORMALIZATION[0]
-    ) / CONTEXT_NORMALIZATION[1]
+        cs.veccat(x0, u_prev, pos_obs, dir_obs) - NORMALIZATION[0]
+    ) / NORMALIZATION[1]
     kappann = None
     if dcbf:
         h = env.safety_constraints(x, pos_obs, dir_obs)
