@@ -9,7 +9,7 @@ from csnlp.wrappers import Mpc
 from csnn import ReLU, Sigmoid, init_parameters
 from csnn.convex import PsdNN
 from csnn.feedforward import Mlp
-from env import NORMALIZATION
+from env import NORMALIZATION as N
 from env import QuadrotorEnv as Env
 from mpcrl.util.control import rk4
 from mpcrl.util.seeding import RngType
@@ -133,33 +133,34 @@ def create_mpc(
     no = env.n_obstacles
     pos_obs = mpc.parameter("pos_obs", (3, no))
     dir_obs = mpc.parameter("dir_obs", (3, no))
-    context = (
-        cs.veccat(x0, u_prev, pos_obs, dir_obs) - NORMALIZATION[0]
-    ) / NORMALIZATION[1]
     kappann = None
     if dcbf:
-        h = env.safety_constraints(x, pos_obs, dir_obs)
+        h0 = env.safety_constraints(x0, pos_obs, dir_obs)
+        h = env.safety_constraints(x[:, 1:], pos_obs, dir_obs)
         if use_kappann:
             in_features = ns + na + no * 6  # 3 positions + 3 directions
-            features = [in_features, *kappann_hidden_size, no]
-            activations = [ReLU] * len(kappann_hidden_size) + [Sigmoid]
-            kappann = Mlp(features, activations)
+            kappann = Mlp(
+                features=[in_features, *kappann_hidden_size, no],
+                acts=[ReLU] * len(kappann_hidden_size) + [Sigmoid],
+            )
             nnfunc = nn2function(kappann, "kappann")
             weights = {
                 n: mpc.parameter(n, p.shape)
                 for n, p in kappann.parameters(prefix="kappann", skip_none=True)
             }
+            context = (cs.veccat(x0, u_prev, pos_obs, dir_obs) - N[0]) / N[1]
             gammas = nnfunc(x=context, **weights)["y"]
-            powers = range(1, horizon + 1)
-            decays = cs.hcat([cs.power(1 - gammas[i], powers) for i in range(no)])
-            dcbf = h[:, 1:] - decays.T * h[:, 0]
         else:
-            decays = cs.power(1 - DCBF_GAMMA, range(1, horizon + 1))
-            dcbf = h[:, 1:] - h[:, 0] @ decays.T
+            gammas = [DCBF_GAMMA] * no
+        decays = cs.hcat(
+            [cs.power(1 - gammas[i], range(1, horizon + 1)) for i in range(no)]
+        )
+        dcbf = h - decays.T * h0
         slack = mpc.constraint("obs", dcbf, ">=", 0.0, soft=soft)[-1]
     else:
-        x_ = x if bound_initial_state else x[:, 1:]
-        h = env.safety_constraints(x_, pos_obs, dir_obs)
+        h = env.safety_constraints(
+            x if bound_initial_state else x[:, 1:], pos_obs, dir_obs
+        )
         slack = mpc.constraint("obs", h, ">=", 0.0, soft=soft)[-1]
 
     # compute stage cost
@@ -183,6 +184,7 @@ def create_mpc(
             n: mpc.parameter(n, p.shape)
             for n, p in psdnn.parameters(prefix="psdnn", skip_none=True)
         }
+        context = (cs.veccat(x0, u_prev, pos_obs, dir_obs) - N[0]) / N[1]
         J += nnfunc(x=dx[:, -1], context=context, **weights)["y"]
 
     # add penalty cost (if needed)
