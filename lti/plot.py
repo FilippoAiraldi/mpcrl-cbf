@@ -326,7 +326,7 @@ if __name__ == "__main__":
             args.all,
         )
     ):
-        warn("No type of visualizations selected.", RuntimeWarning)
+        warn("No type of visualization selected.", RuntimeWarning)
 
     sim_args = []
     data = []
