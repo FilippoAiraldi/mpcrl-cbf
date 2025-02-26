@@ -26,7 +26,7 @@ from util.visualization import (
     plot_training,
 )
 
-plt.style.use("seaborn-v0_8-pastel")
+plt.style.use("bmh")
 plt.rcParams["lines.linewidth"] = 0.75
 plt.rcParams["lines.markersize"] = 6
 
@@ -206,6 +206,7 @@ def plot_safety(
     if plot_gamma:
         axs_gamma = [fig.add_subplot(gs[i, 1]) for i in range(n_obs)]
     ax_viol_prob = fig.add_subplot(gs[-1, :])
+    ax_viol_tot = ax_viol_prob.twinx()
 
     for ax in axs_h:
         ax.axhline(0.0, color="k", ls="--")
@@ -224,22 +225,27 @@ def plot_safety(
         n_agents, n_ep, timesteps, ns = states.shape
         time = np.arange(timesteps)
 
-        violations = np.empty((n_agents, n_ep, timesteps), dtype=np.bool)
+        violations = np.empty((n_agents, n_ep))
+        violating = np.empty((n_agents, n_ep, timesteps), dtype=np.bool)
         for n_a in range(n_agents):
             for n_e in range(n_ep):
                 state_traj = states[n_a, n_e]
                 pos_obs, dir_obs = obs[n_a, n_e]
                 h = safety(state_traj.T, pos_obs, dir_obs).toarray()
-                violating = h < 0
-                for ax, h_, viol_ in zip(axs_h, h, violating):
+                violating_ = h < 0
+                for ax, h_, viol_ in zip(axs_h, h, violating_):
                     ax.plot(time, h_, c)
                     ax.plot(time[viol_], h_[viol_], "r", ls="none", marker="x", ms=3)
-                violations[n_a, n_e] = violating.any(0)
+                violations[n_a, n_e] = np.maximum(0, -h).sum()
+                violating[n_a, n_e] = violating_.any(0)
 
-        prob_violations = violations.mean((1, 2)) * 100.0
-        mean = prob_violations.mean(0)
-        se = sem(prob_violations)
-        violations_data.append((mean, se))
+        prob_violating = violating.mean((1, 2)) * 100.0
+        prob_mean = prob_violating.mean(0)
+        prob_se = sem(prob_violating)
+        tot_violations = violations.mean(1)
+        tot_mean = tot_violations.mean(0)
+        tot_se = sem(tot_violations)
+        violations_data.append((prob_mean, prob_se, tot_mean, tot_se))
 
         # the rest is dedicated to plotting the output of the Kappa neural function
         if "kappann_weights" not in datum and "updates_history" not in datum:
@@ -283,8 +289,15 @@ def plot_safety(
                 for ax, gamma in zip(axs_gamma, gammas):
                     ax.plot(time, gamma, c)
 
-    violations_mean, violations_se = zip(*violations_data)
-    ax_viol_prob.bar(names, violations_mean, yerr=violations_se, capsize=5)
+    width = 0.4
+    prob_mean, prob_se, viol_mean, viol_se = zip(*violations_data)
+    x = np.arange(len(names))
+    rects = ax_viol_prob.bar(x, prob_mean, width, yerr=prob_se, capsize=5, color="C0")
+    ax_viol_prob.bar_label(rects, padding=3)
+    rects = ax_viol_tot.bar(
+        x + width, viol_mean, width, yerr=viol_se, capsize=5, color="C1"
+    )
+    ax_viol_tot.bar_label(rects, padding=3)
 
     for ax in axs_h:
         ax.set_ylabel(f"$h_{i}$")
@@ -293,7 +306,9 @@ def plot_safety(
         for ax in axs_gamma:
             ax.set_ylabel(f"$\\gamma_{i}$")
         axs_gamma[-1].set_xlabel("$k$")
+    ax_viol_prob.set_xticks(x + width / 2, names)
     ax_viol_prob.set_ylabel("Num. of Violations (%)")
+    ax_viol_tot.set_ylabel("Tot. Violations")
 
 
 if __name__ == "__main__":

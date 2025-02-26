@@ -32,7 +32,7 @@ from util.visualization import (
     plot_training,
 )
 
-plt.style.use("seaborn-v0_8-pastel")
+plt.style.use("bmh")
 plt.rcParams["lines.linewidth"] = 0.75
 plt.rcParams["lines.markersize"] = 6
 
