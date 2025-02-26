@@ -51,7 +51,7 @@ class QuadrotorEnvEnvLstdQLearningAgent(LstdQLearningAgent[cs.MX, float]):
 
     def _sample_disturbances(self, env: Env) -> None:
         """Draws the disturbance samples for the time step."""
-        self._disturbances = env.sample_action_disturbance_profiles(
+        self._disturbances = env.sample_disturbance_profiles(
             self._scenarios, self._horizon + 1
         )
 

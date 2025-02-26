@@ -252,7 +252,7 @@ def get_scmpc_controller(
 
     def _f(x, env: Env):
         nonlocal last_sol
-        d = env.sample_action_disturbance_profiles(n_scenarios, horizon).reshape(-1)
+        d = env.sample_disturbance_profiles(n_scenarios, horizon).reshape(-1)
         last_sol, u_opt = func(
             last_sol, x, env.previous_action, env.pos_obs, env.dir_obs, num_weights, d
         )

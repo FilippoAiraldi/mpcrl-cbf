@@ -36,7 +36,7 @@ class QuadrotorEnvLstdDpgAgent(LstdDpgAgent[cs.MX, float]):
 
     def _sample_disturbances(self, env: Env) -> None:
         """Draws the disturbance samples for the time step."""
-        dist = env.sample_action_disturbance_profiles(self._scenarios, self._horizon)
+        dist = env.sample_disturbance_profiles(self._scenarios, self._horizon)
         self.fixed_parameters.update(zip(self._dist_names, dist.mT))
 
     def _set_obstacles(self, env: Env) -> None:

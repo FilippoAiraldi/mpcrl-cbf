@@ -184,7 +184,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
             + self.constraint_penalty * cbf_violations
         )
 
-    def sample_action_disturbance_profiles(
+    def sample_disturbance_profiles(
         self, n: int, length: int | None = None
     ) -> npt.NDArray[np.floating]:
         """Samples i.i.d. action disturbance profiles from the corresponding
