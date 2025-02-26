@@ -161,7 +161,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         u = np.asarray(action).reshape(self.na)
         assert self.action_space.contains(u), f"invalid action {u}"
 
-        w = self.sample_action_disturbance_profiles(1, 1)[0, 0]
+        w = self.sample_disturbance_profiles(1, 1)[0, 0]
         x = self._x
         x_new = self.integrator(x0=x, p=u + w)["xf"].full().flatten()
         assert self.observation_space.contains(x_new), f"invalid new state {x_new}"
