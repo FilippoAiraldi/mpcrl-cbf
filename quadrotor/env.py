@@ -97,8 +97,10 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         # build the symbolic dynamics
         x = cs.MX.sym("x", self.ns)
         u = cs.MX.sym("u", self.na)
+        d = cs.MX.sym("d", self.nd)
         pos, vel = x[:3], x[3:]
-        az, phi, theta, psi = u[0], u[1], u[2], u[3]
+        u_noisy = u + d
+        az, phi, theta, psi = u_noisy[0], u_noisy[1], u_noisy[2], u_noisy[3]
         cphi, sphi = cs.cos(phi), cs.sin(phi)
         ctheta, stheta = cs.cos(theta), cs.sin(theta)
         cpsi, spsi = cs.cos(psi), cs.sin(psi)
@@ -108,10 +110,10 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
             (ctheta * cphi) * az - 9.81,
         )
         x_dot = cs.vertcat(vel, acc)
-        ode = {"x": x, "p": u, "ode": x_dot}
         self.dynamics = cs.Function(
-            "dynamics", [x, u], [x_dot], ["x", "u"], ["xf"], {"cse": True}
+            "dynamics", [x, u, d], [x_dot], ["x", "u", "d"], ["xf"], {"cse": True}
         )
+        ode = {"x": x, "p": cs.vertcat(u, d), "ode": x_dot}
         self.integrator = cs.integrator("intg", "cvodes", ode, 0.0, self.sampling_time)
 
         # build the symbolic safety constraint for the cylindrical obstacle
@@ -152,6 +154,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
 
         self._x = x
         self._t = 0
+        self._dist_profile = self.sample_disturbance_profiles(1)[0]
         self._u_prev = self.a0
         return x, {}
 
@@ -161,9 +164,9 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         u = np.asarray(action).reshape(self.na)
         assert self.action_space.contains(u), f"invalid action {u}"
 
-        w = self.sample_disturbance_profiles(1, 1)[0, 0]
         x = self._x
-        x_new = self.integrator(x0=x, p=u + w)["xf"].full().flatten()
+        d = self._dist_profile[self._t]
+        x_new = self.integrator(x0=x, p=np.concat((u, d)))["xf"].full().flatten()
         assert self.observation_space.contains(x_new), f"invalid new state {x_new}"
 
         self._x = x_new

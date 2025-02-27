@@ -36,21 +36,16 @@ def get_discrete_time_dynamics(
     cs.Function
         The discrete-time dynamics function.
     """
-    x, u = env.dynamics.mx_in()
+    x, u, d = env.dynamics.mx_in()
     args = [x, u]
     argnames = ["x", "u"]
     if include_disturbance:
-        d = cs.MX.sym("d", env.nd)
-        u += d
         args.append(d)
         argnames.append("d")
-    xf = cs.simplify(rk4(lambda x_: env.dynamics(x_, u), x, env.sampling_time))
+    else:
+        d = 0.0
+    xf = cs.simplify(rk4(lambda x_: env.dynamics(x_, u, d), x, env.sampling_time))
     return cs.Function("dynamics", args, [xf], argnames, ["xf"], {"cse": True})
-    # CasADi native RK4 integrator cannot be expanded to SX unfortunately
-    # ode = {"x": x, "p": u, "ode":  env.dynamics(x, u)}
-    # integrator = cs.integrator(
-    #     "dyn_intg", "rk", ode, 0.0, sampling_time, {"number_of_finite_elements": 1}
-    # )
 
 
 def create_mpc(
