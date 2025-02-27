@@ -86,7 +86,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
     constraint_penalty = 1e3  # penalty for bumping into obstacles
 
     # noise
-    action_noise_scale = (a_ub - a_lb) / 10.0
+    action_noise_scale = (a_ub - a_lb) / 20.0
 
     def __init__(self, max_timesteps: int) -> None:
         super().__init__()
