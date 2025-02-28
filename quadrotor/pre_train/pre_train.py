@@ -44,11 +44,22 @@ def load_dataset(
     n_ep, timesteps = states.shape[:2]
     train_idx, eval_idx, test_idx = random_split(torch.arange(n_ep), fractions)
 
+    # add distance to obstacles to the dataset
+    no, r2 = Env.n_obstacles, Env.radius_obstacles**2
+    obs_ = obstacles.reshape(-1, 2, no, 3)
+    pos_obs_, dir_obs_ = obs_[:, 0], obs_[:, 1]
+    pos_ = states[..., :3]
+    diff_pos_ = pos_.unsqueeze(2) - pos_obs_.unsqueeze(1)
+    dist = torch.linalg.cross(diff_pos_, dir_obs_.unsqueeze(1)).square().sum(-1) - r2
+
     # normalize input data via the training means and stds
     x_std, x_mean = torch.std_mean(states[train_idx], (0, 1))
     up_std, up_mean = torch.std_mean(prev_actions[train_idx], (0, 1))
     po_std, po_mean = torch.std_mean(pos_obstacles[train_idx], 0)
     do_std, do_mean = torch.std_mean(dir_obstacles[train_idx], 0)
+    dist_std, dist_mean = dist.amax((0, 1)) - dist.amin((0, 1)), torch.zeros(
+        no, dtype=DTYPE, device=DEVICE  # preserve sign
+    )
     normalizations = {
         "state_mean": x_mean.cpu(),
         "state_std": x_std.cpu(),
@@ -58,15 +69,20 @@ def load_dataset(
         "pos_obs_std": po_std.cpu(),
         "dir_obs_mean": do_mean.cpu(),
         "dir_obs_std": do_std.cpu(),
+        "dist_mean": dist_mean.cpu(),
+        "dist_std": dist_std.cpu(),
     }
     norm_states = (states - x_mean) / x_std
     norm_prev_actions = (prev_actions - up_mean) / up_std
     norm_pos_obstacles = (pos_obstacles - po_mean) / po_std
     norm_dir_obstacles = (dir_obstacles - do_mean) / do_std
+    norm_dist = (dist - dist_mean) / dist_std
 
-    # expand the obstacle data to be broadcastable with the rest and add previous states
+    # expand the obstacle data to be broadcastable with the rest
     exp_norm_pos_obstacles = norm_pos_obstacles.unsqueeze(1).expand(-1, timesteps, -1)
     exp_norm_dir_obstacles = norm_dir_obstacles.unsqueeze(1).expand(-1, timesteps, -1)
+
+    # add the previous state to the dataset
     norm_prev_states = torch.cat((norm_states[:, 0, None], norm_states[:, :-1]), dim=1)
 
     # split the normalized data into training, evaluation, and testing
@@ -77,6 +93,7 @@ def load_dataset(
             norm_prev_actions[idx].reshape(-1, prev_actions.shape[-1]),
             exp_norm_pos_obstacles[idx].reshape(-1, pos_obstacles.shape[-1]),
             exp_norm_dir_obstacles[idx].reshape(-1, dir_obstacles.shape[-1]),
+            norm_dist[idx].reshape(-1, no),
             cost_to_go[idx].reshape(-1),
         )
         for idx in (train_idx, eval_idx, test_idx)
@@ -152,22 +169,25 @@ class TorchPsdNN(nn.Module):
         prev_action: Tensor,
         pos_obs: Tensor,
         dir_obs: Tensor,
+        dist: Tensor,
     ) -> Tensor:
         """Predicts the value of the given state and context (prev state + prev action +
-        obstacles data)."""
+        obstacles data + distance to obstacles)."""
         batches = torch.broadcast_shapes(
             state.shape[:-1],
             prev_state.shape[:-1],
             prev_action.shape[:-1],
             pos_obs.shape[:-1],
             dir_obs.shape[:-1],
+            dist.shape[:-1],
         )
         x = torch.broadcast_to(state, batches + state.shape[-1:])
         xp = torch.broadcast_to(prev_state, batches + prev_state.shape[-1:])
         up = torch.broadcast_to(prev_action, batches + prev_action.shape[-1:])
         po = torch.broadcast_to(pos_obs, batches + pos_obs.shape[-1:])
         do = torch.broadcast_to(dir_obs, batches + dir_obs.shape[-1:])
-        context = torch.cat((xp, up, po, do), dim=-1)
+        d = torch.broadcast_to(dist, batches + dist.shape[-1:])
+        context = torch.cat((xp, up, po, do, d), dim=-1)
 
         L, ref = self.forward(context)
         mat = L.bmm(L.mT)
@@ -209,8 +229,8 @@ def train(
     r2score = R2Score(device=DEVICE)
 
     model.train()
-    for x, x_prev, u_prev, pos_obs, dir_obs, G in dl:
-        pred = model.predict_state_value(x, x_prev, u_prev, pos_obs, dir_obs)
+    for x, x_prev, u_prev, pos_obs, dir_obs, dist, G in dl:
+        pred = model.predict_state_value(x, x_prev, u_prev, pos_obs, dir_obs, dist)
         loss = loss_fn(pred, G)
         loss.backward()
         optim.step()
@@ -248,8 +268,8 @@ def test(
 
     model.eval()
     with torch.no_grad():
-        for x, x_prev, u_prev, pos_obs, dir_obs, G in dl:
-            pred = model.predict_state_value(x, x_prev, u_prev, pos_obs, dir_obs)
+        for x, x_prev, u_prev, pos_obs, dir_obs, dist, G in dl:
+            pred = model.predict_state_value(x, x_prev, u_prev, pos_obs, dir_obs, dist)
             tot_loss += loss_fn(pred, G).item()
             mse.update(pred, G)
             r2score.update(pred, G)
@@ -323,10 +343,10 @@ if __name__ == "__main__":
     test_dl = DataLoader(test_ds, batch_size)
 
     # define model, loss function, and optimizer
-    context_size = Env.ns + Env.na + 2 * 3 * Env.n_obstacles
+    context_size = Env.ns + Env.na + (2 * 3 + 1) * Env.n_obstacles
     mdl = TorchPsdNN(context_size, args.psdnn_hidden, Env.ns).to(DEVICE, DTYPE)
     loss_fn = MSLELoss()
-    optimizer = torch.optim.Adam(mdl.parameters(), args.lr, weight_decay=1e-4)
+    optimizer = torch.optim.Adam(mdl.parameters(), args.lr, weight_decay=1e-3)
 
     # train the model
     logging.basicConfig(

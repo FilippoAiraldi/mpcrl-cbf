@@ -153,7 +153,7 @@ if __name__ == "__main__":
     group.add_argument(
         "--horizons",
         type=int,
-        default=[2, 5, 10],
+        default=[20],
         nargs="+",
         help="The horizons of the MPC controller. The horizons will be assigned "
         "reasonably equally to episodes.",
@@ -174,7 +174,7 @@ if __name__ == "__main__":
     group.add_argument(
         "--timesteps",
         type=int,
-        default=125,
+        default=200,
         help="Number of timesteps per each simulation.",
     )
     group.add_argument(
@@ -226,7 +226,7 @@ if __name__ == "__main__":
         .reshape(n_jobs, n_ep_per_job)
     )
     initial_conditions = np.random.default_rng(seed).normal(
-        Env.x0, [1.0, 1.0, 2.0, 1.0, 1.0, 1.0], (n_jobs, n_ep_per_job, Env.ns)
+        Env.x0, [1.0, 1.0, 2.0, 0.3, 0.3, 1.0], (n_jobs, n_ep_per_job, Env.ns)
     )
     horizons = np.array_split(np.arange(n_ep_per_job * n_jobs), len(args.horizons))
     for arr, h in zip(horizons, args.horizons):

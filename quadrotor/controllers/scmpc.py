@@ -102,14 +102,15 @@ def create_scmpc(
     no = env.n_obstacles
     pos_obs = scmpc.parameter("pos_obs", (3, no))
     dir_obs = scmpc.parameter("dir_obs", (3, no))
+    h0 = env.safety_constraints(x0, pos_obs, dir_obs)
+    ctx_features = ns + na + no * 7  # 3 positions + 3 directions + 1 distance
+    context = (cs.veccat(x0, u_prev, pos_obs, dir_obs, h0) - N[0]) / N[1]
     kappann = None
     if dcbf:
-        h0 = env.safety_constraints(x0, pos_obs, dir_obs)
         h = env.safety_constraints(x[:, 1:], pos_obs, dir_obs)
         if use_kappann:
-            in_features = ns + na + no * 6  # 3 positions + 3 directions
             kappann = Mlp(
-                features=[in_features, *kappann_hidden_size, no],
+                features=[ctx_features, *kappann_hidden_size, no],
                 acts=[ReLU] * len(kappann_hidden_size) + [Sigmoid],
             )
             nnfunc = nn2function(kappann, "kappann")
@@ -117,7 +118,6 @@ def create_scmpc(
                 n: scmpc.parameter(n, p.shape)
                 for n, p in kappann.parameters(prefix="kappann", skip_none=True)
             }
-            context = (cs.veccat(x0, u_prev, pos_obs, dir_obs) - N[0]) / N[1]
             gammas = nnfunc(x=context, **weights)["y"]
         else:
             gammas = [DCBF_GAMMA] * no
@@ -146,14 +146,12 @@ def create_scmpc(
         P = dlqr(A.toarray(), B.toarray(), env.Q, env.R)
         J += cs.bilin(P, dx[:, -1])
     if "psdnn" in terminal_cost:
-        in_features = ns + na + no * 6  # 3 positions + 3 directions
-        psdnn = PsdNN(in_features, psdnn_hidden_sizes, ns, "tril")
+        psdnn = PsdNN(ctx_features, psdnn_hidden_sizes, ns, "tril")
         nnfunc = nn2function(psdnn, "psdnn")
         weights = {
             n: scmpc.parameter(n, p.shape)
             for n, p in psdnn.parameters(prefix="psdnn", skip_none=True)
         }
-        context = (cs.veccat(x0, u_prev, pos_obs, dir_obs) - N[0]) / N[1]
         J += nnfunc(x=dx[:, -1], context=context, **weights)["y"]
 
     # add penalty cost (if needed)
