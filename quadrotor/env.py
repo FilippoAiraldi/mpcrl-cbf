@@ -61,7 +61,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
 
     # initial, final, mean and std of states
     x0 = np.asarray([0.0, 0.0, 2.0, 0.0, 0.0, 0.0])
-    xf = np.asarray([15.0, 15.0, 13.0, 0.0, 0.0, 0.0])
+    xf = np.asarray([12.0, 12.0, 12.0, 0.0, 0.0, 0.0])
 
     # default action and action space bounds
     a0 = np.asarray([9.81, 0.0, 0.0, 0.0])
@@ -76,13 +76,9 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
     R = np.diag([1e-4, 1e-4, 1e-4, 1e2])
 
     # obstacles
-    n_obstacles = 3  # number of cylindrical obstacles
-    radius_obstacles = 2.3  # radius of the cylindrical obstacles + quadrotor size
-    pos_obs_mean = np.asarray([[2, 3, 0], [8, 0, 8], [12, 12, 0]], dtype=float).T
-    pos_obs_std = 1.0
-    dir_obs_mean = np.asarray([[0, 0, 1], [0, 1, 0], [0, 0, 1]], dtype=float).T
-    dir_obs_mean /= np.linalg.norm(dir_obs_mean, axis=0)
-    dir_obs_std = 0.1
+    radius_obs = 3.3  # radius of the cylindrical obstacles + quadrotor size
+    pos_obs = np.asarray([8, 8, 0], dtype=float)
+    dir_obs = np.asarray([0, 0, 1], dtype=float)  # must be unit vector
     constraint_penalty = 1e3  # penalty for bumping into obstacles
 
     # noise
@@ -117,13 +113,9 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         self.integrator = cs.integrator("intg", "cvodes", ode, 0.0, self.sampling_time)
 
         # build the symbolic safety constraint for the cylindrical obstacle
-        pos_obs = cs.MX.sym("p_o", (3, self.n_obstacles))
-        dir_obs = cs.MX.sym("d_o", (3, self.n_obstacles))  # unit vectors
-        r2 = self.radius_obstacles**2
-        h = cs.sum1(cs.cross(pos - pos_obs, dir_obs) ** 2).T - r2  # >= 0
-        self.safety_constraints = cs.Function(
-            "h", [x, pos_obs, dir_obs], [h], ["x", "p_o", "d_o"], ["h"]
-        )
+        r2 = self.radius_obs**2
+        h = cs.sumsqr(cs.cross(pos - self.pos_obs, self.dir_obs)) - r2  # >= 0
+        self.safety_constraint = cs.Function("h", [x], [h], ["x"], ["h"])
 
     @property
     def previous_action(self) -> ActType:
@@ -133,25 +125,14 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         self, *, seed: int | None = None, options: dict[str, Any] | None = None
     ) -> tuple[ObsType, dict[str, Any]]:
         super().reset(seed=seed, options=options)
-        if options is not None and "ic" in options:
-            x = np.asarray(options["ic"])
-            assert self.observation_space.contains(x), f"invalid initial state {x}"
-        else:
-            x = self.x0
-
-        for _ in range(1000):
-            self.pos_obs = self.np_random.normal(self.pos_obs_mean, self.pos_obs_std)
-            self.dir_obs = self.np_random.normal(self.dir_obs_mean, self.dir_obs_std)
-            self.dir_obs /= np.linalg.norm(self.dir_obs, axis=0)
-            if np.all(
-                self.safety_constraints(x, self.pos_obs, self.dir_obs) >= 0
-            ) and np.all(
-                self.safety_constraints(self.xf, self.pos_obs, self.dir_obs) >= 0
-            ):
-                break
-        else:
-            raise RuntimeError("could not generate valid obstacles")
-
+        x = (
+            np.asarray(options["ic"])
+            if options is not None and "ic" in options
+            else self.x0
+        )
+        assert (
+            self.observation_space.contains(x) and self.safety_constraint(x) >= 0
+        ), f"invalid initial state {x}"
         self._x = x
         self._t = 0
         self._dist_profile = self.sample_disturbance_profiles(1)[0]
@@ -178,7 +159,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
     def _compute_cost(self, x: ObsType, u: ActType, x_new: ObsType) -> float:
         # NOTE: for now, we penalize the violations of the least stringent CBF, i.e.,
         # when h(x_new) >= 0
-        h = self.safety_constraints(x_new, self.pos_obs, self.dir_obs)
+        h = self.safety_constraint(x_new)
         cbf_violations = np.maximum(0.0, -h).sum()
         dx = x - self.xf
         return (
