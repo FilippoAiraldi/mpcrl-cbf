@@ -43,7 +43,7 @@ def plot_states_and_actions(
         The dictionaries from different simulations, each containing the keys
         `"actions"` and `"states"`.
     """
-    if not any("states" in d and "actions" in d and "obstacles" in d for d in data):
+    if not any("states" in d and "actions" in d for d in data):
         return
     fig = plt.figure(constrained_layout=True)
     gs = GridSpec(2, 2, fig)
@@ -72,9 +72,12 @@ def plot_states_and_actions(
     na = Env.na
     for i, ax in enumerate(axs_states):
         ax.axhline(Env.xf[i], color="k", ls="--")
+    plot_cylinder(
+        ax_3d, Env.radius_obs, 20, Env.pos_obs, Env.dir_obs, color="k", alpha=0.1
+    )
 
     for i, datum in enumerate(data):
-        if "actions" not in datum or "states" not in datum or "obstacles" not in datum:
+        if "actions" not in datum or "states" not in datum:
             continue
         actions = datum["actions"]  # n_agents x n_ep x timesteps x na
         states = datum["states"]  # n_agents x n_ep x timesteps + 1 x ns
@@ -98,15 +101,6 @@ def plot_states_and_actions(
                 ax.plot(time, state_traj[..., i], c)
             for i, ax in enumerate(axs_action):
                 ax.step(time[:-1], action_traj[..., i], c, where="post")
-
-        # plot obstacles
-        obs = datum["obstacles"]  # n_agents x n_ep x 2 (pos & dir) x 3d x n_obstacles
-        obs = obs.reshape(-1, 2, 3, obs.shape[-1])
-        obs_pos, obs_dir = obs[:, 0], obs[:, 1]
-        r = Env.radius_obstacles
-        for poss, dirs in zip(obs_pos, obs_dir):
-            for pos, dir in zip(poss.T, dirs.T):
-                plot_cylinder(ax_3d, r, 20, pos, dir, color=c, alpha=0.1)
 
     ax_3d.set_xlabel("$p_x$")
     ax_3d.set_ylabel("$p_y$")
@@ -179,48 +173,41 @@ def plot_safety(
     *_: Any,
     **__: Any,
 ) -> None:
-    """Plots the safety of the quadrotor trajectories w.r.t. the obstacles in the
+    """Plots the safety of the quadrotor trajectories w.r.t. the obstacle in the
     simulations. This plot does not distinguish between different agents as it plots
     them all together.
 
     Parameters
     ----------
     data : collection of dictionaries (str, arrays)
-        The dictionaries from different simulations, each containing the keys
-        `"states"` and `"obstacles"`, as well as optionally `"kappann_weights"` and
-        `"updates_history"`.
+        The dictionaries from different simulations, each containing the key `"states"`,
+        as well as optionally `"kappann_weights"` and `"updates_history"`.
     names : collection of str, optional
         The names of the simulations to use in the plot.
     """
-    if not any("states" in d and "obstacles" in d for d in data):
+    if not any("states" in d for d in data):
         return
     env = Env(0)
-    n_obs = env.n_obstacles
-    safety = env.safety_constraints
+    safety = env.safety_constraint
     kappann_cache = {}
 
     plot_gamma = any("weights" in d for d in data)
     fig = plt.figure(constrained_layout=True)
-    gs = GridSpec(n_obs + 1, 2 if plot_gamma else 1, fig)
-    axs_h = [fig.add_subplot(gs[i, 0]) for i in range(n_obs)]
+    gs = GridSpec(2, 2 if plot_gamma else 1, fig)
+    ax_h = fig.add_subplot(gs[0, 0])
+    ax_h.axhline(0.0, color="k", ls="--")
     if plot_gamma:
-        axs_gamma = [fig.add_subplot(gs[i, 1]) for i in range(n_obs)]
-    ax_viol_prob = fig.add_subplot(gs[-1, :])
+        ax_gamma = fig.add_subplot(gs[0, 1])
+        ax_gamma.axhline(0.0, color="k", ls="--")
+        ax_gamma.axhline(1.0, color="k", ls="--")
+    ax_viol_prob = fig.add_subplot(gs[1, :])
     ax_viol_tot = ax_viol_prob.twinx()
-
-    for ax in axs_h:
-        ax.axhline(0.0, color="k", ls="--")
-    if plot_gamma:
-        for ax in axs_gamma:
-            ax.axhline(0.0, color="k", ls="--")
-            ax.axhline(1.0, color="k", ls="--")
 
     violations_data = []
     for i, datum in enumerate(data):
-        if "states" not in datum or "obstacles" not in datum:
+        if "states" not in datum:
             continue
         states = datum["states"]  # n_agents x n_ep x timesteps + 1 x ns
-        obs = datum["obstacles"]  # n_agents x n_ep x 2 (pos & dir) x 3d x n_obstacles
         c = f"C{i}"
         n_agents, n_ep, timesteps, ns = states.shape
         time = np.arange(timesteps)
@@ -230,14 +217,12 @@ def plot_safety(
         for n_a in range(n_agents):
             for n_e in range(n_ep):
                 state_traj = states[n_a, n_e]
-                pos_obs, dir_obs = obs[n_a, n_e]
-                h = safety(state_traj.T, pos_obs, dir_obs).toarray()
-                violating_ = h < 0
-                for ax, h_, viol_ in zip(axs_h, h, violating_):
-                    ax.plot(time, h_, c)
-                    ax.plot(time[viol_], h_[viol_], "r", ls="none", marker="x", ms=3)
+                h = safety(state_traj.T).toarray().flatten()
+                viols = h < 0
+                ax_h.plot(time, h, c)
+                ax_h.plot(time[viols], h[viols], "r", ls="none", marker="x", ms=3)
                 violations[n_a, n_e] = np.maximum(0, -h).sum()
-                violating[n_a, n_e] = violating_.any(0)
+                violating[n_a, n_e] = viols
 
         prob_violating = violating.mean((1, 2)) * 100.0
         prob_mean = prob_violating.mean(0)
@@ -299,13 +284,11 @@ def plot_safety(
     )
     ax_viol_tot.bar_label(rects, padding=3)
 
-    for ax in axs_h:
-        ax.set_ylabel(f"$h_{i}$")
-    axs_h[-1].set_xlabel("$k$")
+    ax_h.set_ylabel(f"$h_{i}$")
+    ax_h.set_xlabel("$k$")
     if plot_gamma:
-        for ax in axs_gamma:
-            ax.set_ylabel(f"$\\gamma_{i}$")
-        axs_gamma[-1].set_xlabel("$k$")
+        ax_gamma.set_ylabel(f"$\\gamma_{i}$")
+        ax_gamma.set_xlabel("$k$")
     ax_viol_prob.set_xticks(x + width / 2, names)
     ax_viol_prob.set_ylabel("Num. of Violations (%)")
     ax_viol_tot.set_ylabel("Tot. Violations")
@@ -333,7 +316,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--safety",
         action="store_true",
-        help="Plots the safety w.r.t. obstacles for each episode.",
+        help="Plots the safety w.r.t. the obstacle for each episode.",
     )
     parser.add_argument(
         "--returns",

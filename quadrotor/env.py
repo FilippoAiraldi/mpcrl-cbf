@@ -61,7 +61,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
 
     # initial, final, mean and std of states
     x0 = np.asarray([0.0, 0.0, 2.0, 0.0, 0.0, 0.0])
-    xf = np.asarray([15.0, 15.0, 13.0, 0.0, 0.0, 0.0])
+    xf = np.asarray([12.0, 12.0, 12.0, 0.0, 0.0, 0.0])
 
     # default action and action space bounds
     a0 = np.asarray([9.81, 0.0, 0.0, 0.0])
@@ -76,13 +76,9 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
     R = np.diag([1e-4, 1e-4, 1e-4, 1e2])
 
     # obstacles
-    n_obstacles = 3  # number of cylindrical obstacles
-    radius_obstacles = 2.3  # radius of the cylindrical obstacles + quadrotor size
-    pos_obs_mean = np.asarray([[2, 3, 0], [8, 0, 8], [12, 12, 0]], dtype=float).T
-    pos_obs_std = 1.0
-    dir_obs_mean = np.asarray([[0, 0, 1], [0, 1, 0], [0, 0, 1]], dtype=float).T
-    dir_obs_mean /= np.linalg.norm(dir_obs_mean, axis=0)
-    dir_obs_std = 0.1
+    radius_obs = 3.3  # radius of the cylindrical obstacles + quadrotor size
+    pos_obs = np.asarray([8, 8, 0], dtype=float)
+    dir_obs = np.asarray([0, 0, 1], dtype=float)  # must be unit vector
     constraint_penalty = 1e3  # penalty for bumping into obstacles
 
     # noise
@@ -117,13 +113,9 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         self.integrator = cs.integrator("intg", "cvodes", ode, 0.0, self.sampling_time)
 
         # build the symbolic safety constraint for the cylindrical obstacle
-        pos_obs = cs.MX.sym("p_o", (3, self.n_obstacles))
-        dir_obs = cs.MX.sym("d_o", (3, self.n_obstacles))  # unit vectors
-        r2 = self.radius_obstacles**2
-        h = cs.sum1(cs.cross(pos - pos_obs, dir_obs) ** 2).T - r2  # >= 0
-        self.safety_constraints = cs.Function(
-            "h", [x, pos_obs, dir_obs], [h], ["x", "p_o", "d_o"], ["h"]
-        )
+        r2 = self.radius_obs**2
+        h = cs.sumsqr(cs.cross(pos - self.pos_obs, self.dir_obs)) - r2  # >= 0
+        self.safety_constraint = cs.Function("h", [x], [h], ["x"], ["h"])
 
     @property
     def previous_action(self) -> ActType:
@@ -133,25 +125,14 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         self, *, seed: int | None = None, options: dict[str, Any] | None = None
     ) -> tuple[ObsType, dict[str, Any]]:
         super().reset(seed=seed, options=options)
-        if options is not None and "ic" in options:
-            x = np.asarray(options["ic"])
-            assert self.observation_space.contains(x), f"invalid initial state {x}"
-        else:
-            x = self.x0
-
-        for _ in range(1000):
-            self.pos_obs = self.np_random.normal(self.pos_obs_mean, self.pos_obs_std)
-            self.dir_obs = self.np_random.normal(self.dir_obs_mean, self.dir_obs_std)
-            self.dir_obs /= np.linalg.norm(self.dir_obs, axis=0)
-            if np.all(
-                self.safety_constraints(x, self.pos_obs, self.dir_obs) >= 0
-            ) and np.all(
-                self.safety_constraints(self.xf, self.pos_obs, self.dir_obs) >= 0
-            ):
-                break
-        else:
-            raise RuntimeError("could not generate valid obstacles")
-
+        x = (
+            np.asarray(options["ic"])
+            if options is not None and "ic" in options
+            else self.x0
+        )
+        assert (
+            self.observation_space.contains(x) and self.safety_constraint(x) >= 0
+        ), f"invalid initial state {x}"
         self._x = x
         self._t = 0
         self._dist_profile = self.sample_disturbance_profiles(1)[0]
@@ -178,7 +159,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
     def _compute_cost(self, x: ObsType, u: ActType, x_new: ObsType) -> float:
         # NOTE: for now, we penalize the violations of the least stringent CBF, i.e.,
         # when h(x_new) >= 0
-        h = self.safety_constraints(x_new, self.pos_obs, self.dir_obs)
+        h = self.safety_constraint(x_new)
         cbf_violations = np.maximum(0.0, -h).sum()
         dx = x - self.xf
         return (
@@ -255,65 +236,12 @@ NORM_FACTORS = {
             0.05589278934746118,
         ]
     ),
-    "pos_obs_mean": np.asarray(
-        [
-            2.1501183931938646,
-            3.149195729198508,
-            0.01915161847424313,
-            8.070382473003617,
-            0.07263722684384825,
-            7.910910323305432,
-            11.86892471734808,
-            11.975422194254207,
-            0.06951498743674385,
-        ]
-    ),
-    "pos_obs_std": np.asarray(
-        [
-            0.9882564008971457,
-            1.0240661424691657,
-            1.0029827469791857,
-            1.0409915674956833,
-            1.0364195836037582,
-            0.9836045719212586,
-            0.9964865665158052,
-            0.977362603387804,
-            0.9814155602746699,
-        ]
-    ),
-    "dir_obs_mean": np.asarray(
-        [
-            5.830065365259106e-5,
-            -0.006040709069421122,
-            0.9895049792346912,
-            -0.0014712701304950841,
-            0.9896505187192365,
-            -0.0057590560373283915,
-            -0.010106393569256784,
-            -0.0034225069279508052,
-            0.989990141410835,
-        ]
-    ),
-    "dir_obs_std": np.asarray(
-        [
-            0.10226346768120201,
-            0.10180337023361205,
-            0.009558758700248624,
-            0.10257391678649148,
-            0.011094264318978846,
-            0.09990384993548733,
-            0.09555828673217691,
-            0.10316701077724287,
-            0.009853353658495698,
-        ]
-    ),
+    "dist_mean": np.array([0.0]),
+    "dist_std": np.array([396.61696249]),
 }
 NORMALIZATION = tuple(
     np.concatenate(
-        [
-            NORM_FACTORS[name + suffix]
-            for name in ("state", "action", "pos_obs", "dir_obs")
-        ]
+        [NORM_FACTORS[name + suffix] for name in ("state", "action", "dist")]
     )
     for suffix in ("_mean", "_std")
 )
