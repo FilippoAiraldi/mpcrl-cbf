@@ -253,7 +253,6 @@ if __name__ == "__main__":
             "terminal_cost",
             "psdnn_hidden",
             "scenarios",
-            "timesteps",
         ):
             setattr(args, attr, data_args[attr])
         weights = data["weights"]

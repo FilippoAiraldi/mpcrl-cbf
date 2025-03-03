@@ -259,7 +259,7 @@ if __name__ == "__main__":
         "--kappann-hidden",
         type=int,
         default=KAPPANN_HIDDEN,
-        nargs=2,
+        nargs="+",
         help="The number of hidden units in the CBF class Kappa MLP function, if used.",
     )
     group.add_argument(
@@ -283,7 +283,7 @@ if __name__ == "__main__":
         "--psdnn-hidden",
         type=int,
         default=PSDNN_HIDDEN,
-        nargs=2,
+        nargs="+",
         help="The number of hidden units in the PSDNN terminal cost, if used.",
     )
     group.add_argument(
