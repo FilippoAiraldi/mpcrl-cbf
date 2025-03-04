@@ -61,7 +61,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
 
     # initial, final, mean and std of states
     x0 = np.asarray([0.0, 0.0, 2.0, 0.0, 0.0, 0.0])
-    xf = np.asarray([12.0, 12.0, 12.0, 0.0, 0.0, 0.0])
+    xf = np.asarray([10.0, 10.0, 10.0, 0.0, 0.0, 0.0])
 
     # default action and action space bounds
     a0 = np.asarray([9.81, 0.0, 0.0, 0.0])
@@ -71,14 +71,15 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
     dtiltmax = 3.0
 
     # dynamics and cost matrices
-    sampling_time = 5e-2
+    sampling_time = 1e-1
     Q = np.eye(ns)
     R = np.diag([1e-4, 1e-4, 1e-4, 1e2])
 
     # obstacles
-    radius_obs = 3.3  # radius of the cylindrical obstacles + quadrotor size
-    pos_obs = np.asarray([8, 8, 0], dtype=float)
-    dir_obs = np.asarray([0, 0, 1], dtype=float)  # must be unit vector
+    radius_obs = 2.5
+    radius_quadrotor = 0.5
+    pos_obs = np.asarray([5.0, 5.0, 0.0])
+    dir_obs = np.asarray([0.0, 0.0, 1.0])  # must be unit vector
     constraint_penalty = 1e3  # penalty for bumping into obstacles
 
     # noise
@@ -113,7 +114,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         self.integrator = cs.integrator("intg", "cvodes", ode, 0.0, self.sampling_time)
 
         # build the symbolic safety constraint for the cylindrical obstacle
-        r2 = self.radius_obs**2
+        r2 = (self.radius_obs + self.radius_quadrotor) ** 2
         h = cs.sumsqr(cs.cross(pos - self.pos_obs, self.dir_obs)) - r2  # >= 0
         self.safety_constraint = cs.Function("h", [x], [h], ["x"], ["h"])
 
