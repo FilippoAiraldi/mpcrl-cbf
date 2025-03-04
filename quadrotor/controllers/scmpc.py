@@ -99,18 +99,15 @@ def create_scmpc(
     scmpc.set_nonlinear_dynamics(dtdynamics)
 
     # set constraints for obstacle avoidance
-    no = env.n_obstacles
-    pos_obs = scmpc.parameter("pos_obs", (3, no))
-    dir_obs = scmpc.parameter("dir_obs", (3, no))
-    h0 = env.safety_constraints(x0, pos_obs, dir_obs)
-    ctx_features = ns + na + no * 7  # 3 positions + 3 directions + 1 distance
-    context = (cs.veccat(x0, u_prev, pos_obs, dir_obs, h0) - N[0]) / N[1]
+    h0 = env.safety_constraint(x0)
+    ctx_features = ns + na + 1
+    context = (cs.veccat(x0, u_prev, h0) - N[0]) / N[1]
     kappann = None
     if dcbf:
-        h = env.safety_constraints(x[:, 1:], pos_obs, dir_obs)
+        h = env.safety_constraint(x[:, 1:])
         if use_kappann:
             kappann = Mlp(
-                features=[ctx_features, *kappann_hidden_size, no],
+                features=[ctx_features, *kappann_hidden_size, 1],
                 acts=[ReLU] * len(kappann_hidden_size) + [Sigmoid],
             )
             nnfunc = nn2function(kappann, "kappann")
@@ -118,18 +115,14 @@ def create_scmpc(
                 n: scmpc.parameter(n, p.shape)
                 for n, p in kappann.parameters(prefix="kappann", skip_none=True)
             }
-            gammas = nnfunc(x=context, **weights)["y"]
+            gamma = nnfunc(x=context, **weights)["y"]
         else:
-            gammas = [DCBF_GAMMA] * no
-        decays = cs.hcat(
-            [cs.power(1 - gammas[i], range(1, horizon + 1)) for i in range(no)]
-        )
+            gamma = DCBF_GAMMA
+        decays = cs.power(1 - gamma, range(1, horizon + 1))
         dcbf = h - decays.T * h0
         slack = scmpc.constraint_from_single("obs", dcbf, ">=", 0.0, soft=soft)[-2]
     else:
-        h = env.safety_constraints(
-            x if bound_initial_state else x[:, 1:], pos_obs, dir_obs
-        )
+        h = env.safety_constraint(x if bound_initial_state else x[:, 1:])
         slack = scmpc.constraint_from_single("obs", h, ">=", 0.0, soft=soft)[-2]
 
     # compute stage cost
@@ -237,8 +230,6 @@ def get_scmpc_controller(
         primals,
         scmpc.initial_states["x_0"],
         scmpc.parameters["u_prev"],
-        scmpc.parameters["pos_obs"],
-        scmpc.parameters["dir_obs"],
         sym_weights,
         disturbances,
     )
@@ -251,9 +242,7 @@ def get_scmpc_controller(
     def _f(x, env: Env):
         nonlocal last_sol
         d = env.sample_disturbance_profiles(n_scenarios, horizon).reshape(-1)
-        last_sol, u_opt = func(
-            last_sol, x, env.previous_action, env.pos_obs, env.dir_obs, num_weights, d
-        )
+        last_sol, u_opt = func(last_sol, x, env.previous_action, num_weights, d)
         return u_opt.toarray().reshape(-1), func.stats()[TIME_MEAS]
 
     def reset():
