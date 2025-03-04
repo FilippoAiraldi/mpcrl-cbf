@@ -68,7 +68,6 @@ def simulate_controller_once(
     npt.NDArray[np.floating],
     npt.NDArray[np.floating],
     npt.NDArray[np.floating],
-    npt.NDArray[np.floating],
     dict[str, npt.NDArray[np.floating]],
 ]:
     """Simulates one episode of the quadrotor environment using the given controller.
@@ -91,12 +90,11 @@ def simulate_controller_once(
 
     Returns
     -------
-    5 float arrays and an dict
+    4 float arrays and an dict
         Returns the following objects:
          - an array of the total cost for each episode
          - two arrays containing the actions and states trajectories respectively
          - an array of solution computation times
-         - an array containing the obstacles positions and direction for each evaluation
          - a dict of the MPC numerical weights. If some `weights` were passed in, this
            contains the same values. If not passed, this contains the randomly
            initialized weights. Can be empty if MPC is not parametric.
@@ -112,11 +110,9 @@ def simulate_controller_once(
     U = np.empty((n_eval, timesteps, env.na))
     X = np.empty((n_eval, timesteps + 1, env.ns))
     sol_times = np.empty((n_eval, timesteps))
-    obstacles = np.empty((n_eval, 2, *env.safety_constraints.size_in(1)))
     for e, s in enumerate(np.random.SeedSequence(seed).generate_state(n_eval)):
         controller.reset()
         x, _ = env.reset(seed=int(s))
-        obstacles[e] = env.pos_obs, env.dir_obs
         X[e, 0] = x
         for t in range(timesteps):
             u, sol_time = controller(x, env)
@@ -125,7 +121,7 @@ def simulate_controller_once(
             U[e, t] = u
             X[e, t + 1] = x
             sol_times[e, t] = sol_time
-    return R, U, X, sol_times, obstacles, weights_
+    return R, U, X, sol_times, weights_
 
 
 if __name__ == "__main__":
@@ -289,7 +285,7 @@ if __name__ == "__main__":
 
     # congregate data all together - weights is a dictionary, so requires further
     # attention
-    keys = ("cost", "actions", "states", "sol_times", "obstacles", "weights")
+    keys = ("cost", "actions", "states", "sol_times", "weights")
     data_dict = dict(zip(keys, map(np.asarray, zip(*data))))
     weights = data_dict.pop("weights")
     wnames = weights[0].keys()
