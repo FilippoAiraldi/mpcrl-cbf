@@ -29,7 +29,7 @@ def simulate_controller_once(
     timesteps: int,
     initial_conditions: Sequence[npt.NDArray[np.float64]],
     seeds: Sequence[int],
-) -> tuple[npt.NDArray[np.float64], ...]:
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]:
     """Simulates one episode of the quadrotor environment using the given controller.
 
     Parameters
@@ -51,18 +51,16 @@ def simulate_controller_once(
 
     Returns
     -------
-    4 float arrays
+    3 float arrays
         Returns the following objects:
          - an array containing the rewards for each episode's timestep
          - an array containing the state trajectories
          - an array containing the action trajectories (shifted one timestep backwards)
-         - an array containing the obstacles positions and direction for each episode.
     """
     env = Env(timesteps)
     R = np.empty((n_ep, timesteps))
     U_prev = np.empty((n_ep, timesteps, env.na))
     X = np.empty((n_ep, timesteps, env.ns))
-    obstacles = np.empty((n_ep, 2, *env.safety_constraints.size_in(1)))
 
     for e, (seed, ic, h) in enumerate(zip(seeds, initial_conditions, horizons)):
         if h in CONTROLLER_CACHE:
@@ -75,7 +73,6 @@ def simulate_controller_once(
 
         controller.reset()
         x, _ = env.reset(seed=int(seed), options={"ic": ic})
-        obstacles[e] = env.pos_obs, env.dir_obs
         for t in range(timesteps):
             X[e, t] = x
             U_prev[e, t] = env.previous_action
@@ -83,7 +80,7 @@ def simulate_controller_once(
             x, r, _, _, _ = env.step(u)
             R[e, t] = r
 
-    return R, X, U_prev, obstacles
+    return R, X, U_prev
 
 
 def generate_dataset_chunk(
@@ -94,7 +91,7 @@ def generate_dataset_chunk(
     timesteps: int,
     initial_conditions: Sequence[npt.NDArray[np.float64]],
     seeds: Sequence[int],
-) -> tuple[npt.NDArray[np.float64], ...]:
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]:
     """Generates a chunk of dataset corresponding to the specified amount of episodes.
 
     Parameters
@@ -116,14 +113,13 @@ def generate_dataset_chunk(
 
     Returns
     -------
-    4 float arrays
+    3 float arrays
         Returns the following objects:
          - an array containing the cost-to-go target for the pre-training.
          - an array containing the state input for the pre-training
          - an array containing the previous action input for the pre-training
-         - an array containing the obstacle data input for the pre-training
     """
-    R, X, U_prev, obstacles = simulate_controller_once(
+    R, X, U_prev = simulate_controller_once(
         controller_name,
         controller_kwargs,
         horizons,
@@ -132,9 +128,8 @@ def generate_dataset_chunk(
         initial_conditions,
         seeds,
     )
-    obstacles_ = obstacles.reshape(n_ep, 2, -1, order="F")  # same orientation as casadi
     G = R[:, ::-1].cumsum(1)[:, ::-1]  # compute cost-to-go
-    return G, X, U_prev, obstacles_
+    return G, X, U_prev
 
 
 if __name__ == "__main__":
@@ -174,13 +169,13 @@ if __name__ == "__main__":
     group.add_argument(
         "--timesteps",
         type=int,
-        default=200,
+        default=100,
         help="Number of timesteps per each simulation.",
     )
     group.add_argument(
         "--n-episodes",
         type=int,
-        default=500,
+        default=200,
         help="Number of episodes to include in the dataset.",
     )
     group = parser.add_argument_group("Storing options")
@@ -240,13 +235,12 @@ if __name__ == "__main__":
         )
         for ics_, seeds_, h_ in zip(initial_conditions, seeds, horizons)
     )
-    cost_to_go, states, prev_actions, obstacles = map(np.concatenate, zip(*data))
+    cost_to_go, states, prev_actions = map(np.concatenate, zip(*data))
     save(
         args.save,
         cost_to_go=cost_to_go,
         states=states,
         previous_actions=prev_actions,
-        obstacles=obstacles,
         args=args.__dict__,
         compression="lzma",
     )
