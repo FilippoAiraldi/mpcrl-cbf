@@ -165,7 +165,7 @@ def create_mpc(
         P = dlqr(A.toarray(), B.toarray(), env.Q, env.R)
         J += cs.bilin(P, dx[:, -1])
     if "psdnn" in terminal_cost:
-        psdnn = PsdNN(ctx_features, psdnn_hidden_sizes, ns, "tril")
+        psdnn = PsdNN(ctx_features, psdnn_hidden_sizes, ns, "tril", eps=1e-4)
         nnfunc = nn2function(psdnn, "psdnn")
         weights = {
             n: mpc.parameter(n, p.shape)
