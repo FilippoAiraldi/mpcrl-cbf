@@ -92,7 +92,7 @@ def get_lstd_qlearning_agent(
         discount_factor=1.0,
         update_strategy=batch_size,
         experience=batch_size,
-        optimizer=optim.RMSprop(learning_rate),
+        optimizer=optim.RMSprop(learning_rate, weight_decay=1e-3),
         hessian_type="none",
         learnable_parameters=learnable_parameters,
         fixed_parameters={},
