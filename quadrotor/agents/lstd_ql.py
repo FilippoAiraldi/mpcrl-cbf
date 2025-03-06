@@ -7,7 +7,7 @@ from csnlp.wrappers import ScenarioBasedMpc
 from env import QuadrotorEnv as Env
 from mpcrl import LearnableParametersDict, LstdQLearningAgent, optim
 from mpcrl.core.exploration import EpsilonGreedyExploration
-from mpcrl.core.schedulers import ExponentialScheduler
+from mpcrl.core.schedulers import ExponentialScheduler, NoScheduling
 
 
 class QuadrotorEnvEnvLstdQLearningAgent(LstdQLearningAgent[cs.MX, float]):
@@ -79,14 +79,22 @@ def get_lstd_qlearning_agent(
     exploration_strength: tuple[npt.NDArray[np.floating], float],
     name: str,
 ) -> QuadrotorEnvEnvLstdQLearningAgent:
-    exploration = (
-        None
-        if exploration_epsilon[0] <= 0 or np.all(exploration_strength[0] <= 0)
-        else EpsilonGreedyExploration(
-            epsilon=ExponentialScheduler(*exploration_epsilon),
-            strength=ExponentialScheduler(*exploration_strength),
+    eps_value, eps_decay = exploration_epsilon
+    str_value, str_decay = exploration_strength
+    if eps_value <= 0.0 or np.all(str_value <= 0.0):
+        exploration = None
+    else:
+        eps = (
+            ExponentialScheduler(eps_value, eps_decay)
+            if str_decay != 1.0
+            else NoScheduling(eps_value)
         )
-    )
+        str = (
+            ExponentialScheduler(str_value, str_decay)
+            if str_decay != 1.0
+            else NoScheduling(str_value)
+        )
+        exploration = EpsilonGreedyExploration(eps, str, mode="additive")
     return QuadrotorEnvEnvLstdQLearningAgent(
         mpc=scmpc,
         discount_factor=1.0,
