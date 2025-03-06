@@ -104,12 +104,13 @@ def create_mpc(
     """
     if env is None:
         env = Env(0)
-    ns = env.ns
-    na = env.na
+    ns, na = env.ns, env.na
 
     # create states and actions
     mpc = Mpc(Nlp("MX"), horizon, shooting="multi")
-    x, x0 = mpc.state("x", ns)
+    x_lb = np.full((ns, 1), -10.0)
+    x_ub = np.reshape([20.0, 20.0, 20.0, 10.0, 10.0, 10.0], (ns, 1))
+    x, x0 = mpc.state("x", ns, lb=x_lb, ub=x_ub)
     u, _ = mpc.action("u", na, lb=env.a_lb[:, None], ub=env.a_ub[:, None])
 
     # set other action constraints
