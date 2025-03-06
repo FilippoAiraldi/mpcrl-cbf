@@ -11,9 +11,8 @@ from mpcrl.core.schedulers import ExponentialScheduler
 
 class QuadrotorEnvLstdDpgAgent(LstdDpgAgent[cs.MX, float]):
     """A LSTD determinisitc policy-gradient agent for the `QuadrotorEnv` env that takes
-    care of updating the positions and directions of the environment obstacles, updating
-    the previus action passed to the environment, and updating the samples of the
-    disturbances affecting the prediction model at each time step."""
+    care of updating the previus action passed to the environment, and updating the
+    samples of the disturbances affecting the prediction model at each time step."""
 
     def __init__(self, mpc: ScenarioBasedMpc[cs.MX], *args: Any, **kwargs: Any) -> None:
         super().__init__(mpc, *args, **kwargs)
@@ -24,7 +23,6 @@ class QuadrotorEnvLstdDpgAgent(LstdDpgAgent[cs.MX, float]):
     def on_episode_start(self, env: Env, episode: int, state: np.ndarray) -> None:
         super().on_episode_start(env, episode, state)
         env = env.unwrapped
-        self._set_obstacles(env)
         self._set_previous_action(env)
         self._sample_disturbances(env)
 
@@ -38,11 +36,6 @@ class QuadrotorEnvLstdDpgAgent(LstdDpgAgent[cs.MX, float]):
         """Draws the disturbance samples for the time step."""
         dist = env.sample_disturbance_profiles(self._scenarios, self._horizon)
         self.fixed_parameters.update(zip(self._dist_names, dist.mT))
-
-    def _set_obstacles(self, env: Env) -> None:
-        """Updates the obstacles positions and directions."""
-        self.fixed_parameters["pos_obs"] = env.pos_obs
-        self.fixed_parameters["dir_obs"] = env.dir_obs
 
     def _set_previous_action(self, env: Env) -> None:
         """Updates the previous action."""
