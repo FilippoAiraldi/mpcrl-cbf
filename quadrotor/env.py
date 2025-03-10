@@ -122,6 +122,20 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
     def previous_action(self) -> ActType:
         return self._u_prev
 
+    def _update_action(self, new_action: ActType) -> None:
+        """Updates the action space based on the previous action."""
+        # NOTE: this is especially useful to properly clip perturbations to actions
+        # during RL exploration
+        self._u_prev = new_action
+        idx = [1, 2]
+        dtiltimax = self.dtiltmax * self.sampling_time
+        self.action_space.low[idx] = np.maximum(
+            self.a_lb[idx], new_action[idx] - dtiltimax
+        )
+        self.action_space.high[idx] = np.minimum(
+            self.a_ub[idx], new_action[idx] + dtiltimax
+        )
+
     def reset(
         self, *, seed: int | None = None, options: dict[str, Any] | None = None
     ) -> tuple[ObsType, dict[str, Any]]:
@@ -137,7 +151,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         self._x = x
         self._t = 0
         self._dist_profile = self.sample_disturbance_profiles(1)[0]
-        self._u_prev = self.a0
+        self._update_action(self.a0)
         return x, {}
 
     def step(
@@ -153,7 +167,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
 
         self._x = x_new
         self._t += 1
-        self._u_prev = u
+        self._update_action(u)
         truncated = self._t >= self._max_timesteps
         return x_new, self._compute_cost(x, u, x_new), False, truncated, {}
 
