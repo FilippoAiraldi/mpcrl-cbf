@@ -270,12 +270,14 @@ def plot_returns(
     data: Collection[dict[str, npt.NDArray[np.floating]]],
     names: Collection[str] | None = None,
 ) -> None:
-    """Plots the returns of the simulations.
+    """Plots the returns of the simulations (normalized by the length of each
+    episode).
 
     Parameters
     ----------
     data : collection of dictionaries (str, arrays)
-        The dictionaries from different simulations, each containing the key `"cost"`.
+        The dictionaries from different simulations, each containing the keys `"cost"`
+        and `"states"`.
     names : collection of str, optional
         The names of the simulations to use in the plot.
     """
@@ -283,7 +285,8 @@ def plot_returns(
 
     for i, datum in enumerate(data):
         c = f"C{i}"
-        returns = datum["cost"]  # n_agents x n_ep
+        timesteps = datum["states"].shape[2] - 1
+        returns = datum["cost"] / timesteps  # n_agents x n_ep
         episodes = np.arange(returns.shape[1])
         # print(f"cost: {np.mean(returns)} ± {np.std(returns)} | {np.median(returns)}")
         # in the first axis, flatten the first two axes as we do not distinguish between
@@ -302,9 +305,9 @@ def plot_returns(
     ax1.set_xticks(range(len(data)))
     if names is not None:
         ax1.set_xticklabels(names)
-    ax1.set_ylabel("Return")
+    ax1.set_ylabel("Return (normalized)")
     ax2.set_xlabel("Episode")
-    ax2.set_ylabel("Return")
+    ax2.set_ylabel("Return (normalized)")
 
 
 def plot_solver_times(
@@ -404,9 +407,12 @@ def plot_training(
 
         if "td_errors" in datum:
             td_errors = datum["td_errors"]  # n_agents x n_ep x timestep
-            td_errors = np.abs(td_errors).sum(2)
+            td_errors = np.nansum(np.square(td_errors), 2)
             episodes = np.arange(td_errors.shape[1])
             plot_population(ax_td, episodes, td_errors, axis=0, color=c)
+            # nans = np.isnan(td_errors).sum(1)
+            # timesteps = td_errors.shape[2]
+            # print(f"NaN TD errors: {np.mean(nans)} +/- {np.std(nans)} / {timesteps}")
         elif "policy_gradients" in datum:
             n_ep = datum["cost"].shape[1]
             grads = datum["policy_gradients"]  # n_agents x n_up x n_pars
@@ -434,7 +440,7 @@ def plot_training(
 
     if any_td:
         ax_td.set_xlabel("Episode")
-        ax_td.set_ylabel(r"$\sum{|\delta|}$")
+        ax_td.set_ylabel(r"$\sum{\delta^2}$")
     if any_pg:
         ax_pg.set_xlabel("Episode")
         ax_pg.set_ylabel(r"$\| \nabla_\theta J(\pi_\theta) \|_2$")

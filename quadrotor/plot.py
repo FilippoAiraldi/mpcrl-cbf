@@ -181,7 +181,7 @@ def plot_safety(
     ----------
     data : collection of dictionaries (str, arrays)
         The dictionaries from different simulations, each containing the key `"states"`,
-        as well as optionally `"kappann_weights"` and `"updates_history"`.
+        as well as optionally `"actions"` and `"weights"`.
     names : collection of str, optional
         The names of the simulations to use in the plot.
     """
@@ -191,7 +191,7 @@ def plot_safety(
     safety = env.safety_constraint
     kappann_cache = {}
 
-    plot_gamma = any("weights" in d for d in data)
+    plot_gamma = any("actions" in d and "weights" in d for d in data)
     fig = plt.figure(constrained_layout=True)
     gs = GridSpec(2, 2 if plot_gamma else 1, fig)
     ax_h = fig.add_subplot(gs[0, 0])
@@ -209,7 +209,7 @@ def plot_safety(
             continue
         states = datum["states"]  # n_agents x n_ep x timesteps + 1 x ns
         c = f"C{i}"
-        n_agents, n_ep, timesteps, ns = states.shape
+        n_agents, n_ep, timesteps, _ = states.shape
         time = np.arange(timesteps)
 
         violations = np.empty((n_agents, n_ep))
@@ -232,24 +232,17 @@ def plot_safety(
         tot_se = sem(tot_violations)
         violations_data.append((prob_mean, prob_se, tot_mean, tot_se))
 
-        # the rest is dedicated to plotting the output of the Kappa neural function
-        if "kappann_weights" not in datum and "updates_history" not in datum:
+        # the rest is dedicated to plotting the output of the Kappa neural function -
+        # this can happen only for evaluation files
+        if "actions" not in datum or "weights" not in datum:
             continue
-        is_eval = "kappann_weights" in datum
-        kappann_weights = (
-            datum["kappann_weights"]
-            if is_eval
-            else {
-                n: w
-                for n, w in datum["updates_history"].items()
-                if n.startswith("kappann.")
-            }
-        )
-
-        features = [
-            w.shape[-1] for n, w in kappann_weights.items() if n.endswith(".weight")
-        ] + [n_obs]
-        assert features[0] == ns + n_obs * 6, "Invalid input features."
+        kweights = {
+            n: w for n, w in datum["weights"].items() if n.startswith("kappann.")
+        }
+        features = tuple(
+            w.shape[-1] for n, w in kweights.items() if n.endswith(".weight")
+        ) + (1,)
+        assert features[0] == Env.ns + Env.na + 1, "Invalid input features."
         if features in kappann_cache:
             nnfunc = kappann_cache[features]
         else:
@@ -257,22 +250,17 @@ def plot_safety(
             nnfunc = nn2function(kappann, "kappann")
             kappann_cache[features] = nnfunc
 
+        actions = datum["actions"]  # n_agents x n_ep x timesteps x na
+        actions_prev = np.insert(actions, 0, Env.a0, 2)
         for a in range(n_agents):
-            if is_eval:
-                kappann_weights_ = {n: w[a] for n, w in kappann_weights.items()}
-
+            kweights_ = {n: w[a] for n, w in kweights.items()}
             for e in range(n_ep):
-                if not is_eval:
-                    kappann_weights_ = {n: w[a, e] for n, w in kappann_weights.items()}
-
                 state_traj = states[a, e]
-                pos_obs, dir_obs = obs[a, e]
-                pos_obs_ = pos_obs.reshape(1, -1, order="F").repeat(timesteps, 0)
-                dir_obs_ = dir_obs.reshape(1, -1, order="F").repeat(timesteps, 0)
-                context = np.concatenate((state_traj, pos_obs_, dir_obs_), 1)
-                gammas = nnfunc(x=context.T, **kappann_weights_)["y"].toarray()
-                for ax, gamma in zip(axs_gamma, gammas):
-                    ax.plot(time, gamma, c)
+                action_prev_traj = actions_prev[a, e]
+                h = safety(state_traj.T).toarray().reshape(-1, 1)
+                context = np.concatenate((state_traj, action_prev_traj, h), 1).T
+                gamma = nnfunc(x=context, **kweights_)["y"]
+                ax_gamma.plot(time, gamma.toarray().flatten(), c)
 
     width = 0.4
     prob_mean, prob_se, viol_mean, viol_se = zip(*violations_data)
