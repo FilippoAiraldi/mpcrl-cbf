@@ -141,7 +141,7 @@ def create_scmpc(
         P = dlqr(A.toarray(), B.toarray(), env.Q, env.R)
         J += cs.bilin(P, dx[:, -1])
     if "psdnn" in terminal_cost:
-        psdnn = PsdNN(ctx_features, psdnn_hidden_sizes, ns, "tril", eps=1e-4)
+        psdnn = PsdNN(ctx_features, psdnn_hidden_sizes, ns, "tril")
         nnfunc = nn2function(psdnn, "psdnn")
         weights = {
             n: scmpc.parameter(n, p.shape)

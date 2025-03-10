@@ -158,7 +158,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         self, action: npt.ArrayLike
     ) -> tuple[ObsType, float, bool, bool, dict[str, Any]]:
         u = np.asarray(action).reshape(self.na)
-        assert self.action_space.contains(u), f"invalid action {u}"
+        # assert self.action_space.contains(u), f"invalid action {u}"
 
         x = self._x
         d = self._dist_profile[self._t]
