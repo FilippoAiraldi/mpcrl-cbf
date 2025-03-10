@@ -308,6 +308,8 @@ def plot_returns(
     ax1.set_ylabel("Return (normalized)")
     ax2.set_xlabel("Episode")
     ax2.set_ylabel("Return (normalized)")
+    # ax1.set_yscale("log")
+    # ax2.set_yscale("log")
 
 
 def plot_solver_times(
