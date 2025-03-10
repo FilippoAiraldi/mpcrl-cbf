@@ -181,7 +181,7 @@ def plot_safety(
     ----------
     data : collection of dictionaries (str, arrays)
         The dictionaries from different simulations, each containing the key `"states"`,
-        as well as optionally `"actions"` and `"weights"`.
+        as well as optionally `"actions"` and Kappa NN weights in `"weights"`.
     names : collection of str, optional
         The names of the simulations to use in the plot.
     """
@@ -191,7 +191,10 @@ def plot_safety(
     safety = env.safety_constraint
     kappann_cache = {}
 
-    plot_gamma = any("actions" in d and "weights" in d for d in data)
+    plot_gamma = any(
+        "actions" in d and any(w.startswith("kappann.") for w in d.get("weights", {}))
+        for d in data
+    )
     fig = plt.figure(constrained_layout=True)
     gs = GridSpec(2, 2 if plot_gamma else 1, fig)
     ax_h = fig.add_subplot(gs[0, 0])
@@ -234,7 +237,11 @@ def plot_safety(
 
         # the rest is dedicated to plotting the output of the Kappa neural function -
         # this can happen only for evaluation files
-        if "actions" not in datum or "weights" not in datum:
+        if (
+            "actions" not in datum
+            or "weights" not in datum
+            or not any(w.startswith("kappann.") for w in datum["weights"])
+        ):
             continue
         kweights = {
             n: w for n, w in datum["weights"].items() if n.startswith("kappann.")

@@ -285,7 +285,7 @@ def plot_returns(
 
     for i, datum in enumerate(data):
         c = f"C{i}"
-        timesteps = datum["states"].shape[2] - 1
+        timesteps = datum["sol_times"].shape[2]
         returns = datum["cost"] / timesteps  # n_agents x n_ep
         episodes = np.arange(returns.shape[1])
         # print(f"cost: {np.mean(returns)} ± {np.std(returns)} | {np.median(returns)}")
