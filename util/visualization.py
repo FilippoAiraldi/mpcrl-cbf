@@ -283,9 +283,13 @@ def plot_returns(
     """
     _, (ax1, ax2) = plt.subplots(2, 1, constrained_layout=True)
 
-    for i, datum in enumerate(data):
+    # normalize the returns by the number of timesteps in each episode
+    timestepss = [datum["sol_times"].shape[2] for datum in data]
+    max_timesteps = max(timestepss)
+
+    for i, (datum, timesteps) in enumerate(zip(data, timestepss)):
         c = f"C{i}"
-        timesteps = datum["sol_times"].shape[2]
+        returns = datum["cost"] * max_timesteps / timesteps  # n_agents x n_ep
         returns = datum["cost"] / timesteps  # n_agents x n_ep
         episodes = np.arange(returns.shape[1])
         # print(f"cost: {np.mean(returns)} ± {np.std(returns)} | {np.median(returns)}")
@@ -409,12 +413,11 @@ def plot_training(
 
         if "td_errors" in datum:
             td_errors = datum["td_errors"]  # n_agents x n_ep x timestep
-            td_errors = np.nansum(np.square(td_errors), 2)
+            td_errors_ = np.nansum(np.square(td_errors), 2)
             episodes = np.arange(td_errors.shape[1])
-            plot_population(ax_td, episodes, td_errors, axis=0, color=c)
-            # nans = np.isnan(td_errors).sum(1)
-            # timesteps = td_errors.shape[2]
-            # print(f"NaN TD errors: {np.mean(nans)} +/- {np.std(nans)} / {timesteps}")
+            plot_population(ax_td, episodes, td_errors_, axis=0, color=c)
+            # nans = np.isnan(td_errors).mean((0, 2)) * 100.0
+            # print(f"% NaN TD errors per ep.: {nans}")
         elif "policy_gradients" in datum:
             n_ep = datum["cost"].shape[1]
             grads = datum["policy_gradients"]  # n_agents x n_up x n_pars
