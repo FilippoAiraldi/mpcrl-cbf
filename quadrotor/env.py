@@ -140,6 +140,10 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         self, *, seed: int | None = None, options: dict[str, Any] | None = None
     ) -> tuple[ObsType, dict[str, Any]]:
         super().reset(seed=seed, options=options)
+        # NOTE: to ensure reproducibility independently of the timesteps and MPC dist.
+        # sampling, we spawn two independent random number generators
+        internal_rng, self._sampling_rng = self.np_random.spawn(2)
+
         x = (
             np.asarray(options["ic"])
             if options is not None and "ic" in options
@@ -150,7 +154,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         ), f"invalid initial state {x}"
         self._x = x
         self._t = 0
-        self._dist_profile = self.sample_disturbance_profiles(1)[0]
+        self._dist_profile = self.sample_disturbance_profiles(1, rng=internal_rng)[0]
         self._update_action(self.a0)
         return x, {}
 
@@ -184,7 +188,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         )
 
     def sample_disturbance_profiles(
-        self, n: int, length: int | None = None
+        self, n: int, length: int | None = None, rng: np.random.Generator | None = None
     ) -> npt.NDArray[np.floating]:
         """Samples i.i.d. action disturbance profiles from the corresponding
         distribution.
@@ -196,6 +200,9 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         length : int, optional
             The number of timesteps in each actopm disturbance profile. If `None`, the
             maximum number of timesteps is used.
+        rng : np.random.Generator, optional
+            The random number generator to use for sampling. If `None`, the
+            environment's default generator is used.
 
         Returns
         -------
@@ -205,11 +212,13 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         """
         if length is None:
             length = self._max_timesteps
+        if rng is None:
+            rng = self._sampling_rng
         return truncnorm.rvs(
             self.a_lb,
             self.a_ub,
             scale=self.action_noise_scale,
-            random_state=self.np_random,
+            random_state=rng,
             size=(n, length, self.nd),
         )
 
