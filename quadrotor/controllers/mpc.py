@@ -163,7 +163,7 @@ def create_mpc(
     if "dlqr" in terminal_cost:
         ldynamics = dtdynamics.factory("dyn_lin", ("x", "u"), ("jac:xf:x", "jac:xf:u"))
         A, B = ldynamics(env.xf, env.a0)
-        P = dlqr(A.toarray(), B.toarray(), env.Q, env.R)
+        P = dlqr(A.toarray(), B.toarray(), np.diag(env.Q), np.diag(env.R))
         J += cs.bilin(P, dx[:, -1])
     if "psdnn" in terminal_cost:
         psdnn = PsdNN(ctx_features, psdnn_hidden_sizes, ns, "tril", eps=1e-4)
@@ -223,7 +223,7 @@ def get_mpc_controller(*args: Any, seed: RngType = None, **kwargs: Any) -> tuple
     # also add the stage cost parameters
     for k in ("Q", "R"):
         sym_weights_[k] = mpc.parameters[k]
-        num_weights_[k] = np.sqrt(np.diag(getattr(Env, k)))
+        num_weights_[k] = np.sqrt(getattr(Env, k))
 
     # group the symbolical inputs of the MPC controller
     primals = mpc.nlp.x

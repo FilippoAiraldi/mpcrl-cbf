@@ -143,7 +143,7 @@ def train_one_agent(
             LearnableParameter(
                 name,
                 sym_pars[name].shape,
-                np.sqrt(np.diag(getattr(Env, name))).reshape(-1, 1),
+                np.sqrt(getattr(Env, name)).reshape(-1, 1),
                 sym=sym_pars[name],
             )
         )

@@ -72,8 +72,8 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
 
     # dynamics and cost matrices
     sampling_time = 1e-1
-    Q = np.eye(ns)
-    R = np.diag([1e-4, 1e-4, 1e-4, 1e2])
+    Q = np.ones(ns)
+    R = np.asarray([1e-4, 1e-4, 1e-4, 1e2])
 
     # obstacles
     radius_obs = 2.5
@@ -180,10 +180,9 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         # when h(x_new) >= 0
         h = self.safety_constraint(x_new)
         cbf_violations = np.maximum(0.0, -h).sum()
-        dx = x - self.xf
         return (
-            np.dot(np.dot(self.Q, dx), dx)
-            + np.dot(np.dot(self.R, u), u)
+            (self.Q * np.square(x - self.xf)).sum()
+            + (self.R * np.square(u)).sum()
             + self.constraint_penalty * cbf_violations
         )
 
