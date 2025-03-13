@@ -3,6 +3,7 @@ from typing import Any
 import casadi as cs
 import numpy as np
 import numpy.typing as npt
+from csnlp.core.cache import invalidate_caches_of
 from csnlp.wrappers import ScenarioBasedMpc
 from env import QuadrotorEnv as Env
 from mpcrl import LearnableParametersDict, LstdQLearningAgent, optim
@@ -29,6 +30,24 @@ class QuadrotorEnvEnvLstdQLearningAgent(LstdQLearningAgent[cs.MX, float]):
         self._scenarios = mpc.n_scenarios
         self._horizon = mpc.prediction_horizon
         self._dist_names = [f"w__{i}" for i in range(self._scenarios)]
+
+    def _post_setup_V_and_Q(self) -> None:
+        # since Q's first action is constrained, and it is noisy due to exploration, we
+        # remove 3 constraints from Q that cause the MPC to become infeasible: max_tilt,
+        # min_dtilt, and max_dtilt (see scmpc.py to understand these constraints)
+        super()._post_setup_V_and_Q()
+        nlp = self.Q.nlp
+        nlp.remove_constraints("max_tilt", (0, 0))
+        nlp.remove_constraints("min_dtilt", [(0, 0), (1, 0)])
+        nlp.remove_constraints("max_dtilt", [(0, 0), (1, 0)])
+
+        # invalidate caches for Q since some modifications have been done
+        nlp_ = self.Q
+        nlp_unwrapped = nlp.unwrapped
+        while nlp_ is not nlp_unwrapped:
+            invalidate_caches_of(nlp_)
+            nlp_ = nlp_.nlp
+        invalidate_caches_of(nlp_unwrapped)
 
     def on_episode_start(self, env: Env, episode: int, state: np.ndarray) -> None:
         super().on_episode_start(env, episode, state)
