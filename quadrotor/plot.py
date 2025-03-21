@@ -266,7 +266,7 @@ def plot_safety(
                 action_prev_traj = actions_prev[a, e]
                 h = safety(state_traj.T).toarray().reshape(-1, 1)
                 context = np.concatenate((state_traj, action_prev_traj, h), 1).T
-                gamma = nnfunc(x=context, **kweights_)["y"]
+                gamma = nnfunc(x=context, **kweights_)["V"]
                 ax_gamma.plot(time, gamma.toarray().flatten(), c)
 
     width = 0.4

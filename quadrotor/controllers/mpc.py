@@ -142,7 +142,7 @@ def create_mpc(
                 n: mpc.parameter(n, p.shape)
                 for n, p in kappann.parameters(prefix="kappann", skip_none=True)
             }
-            gamma = nnfunc(x=context, **weights)["y"]
+            gamma = nnfunc(x=context, **weights)["V"]
         else:
             gamma = DCBF_GAMMA
         decays = cs.power(1 - gamma, range(1, horizon + 1))
@@ -172,7 +172,7 @@ def create_mpc(
             n: mpc.parameter(n, p.shape)
             for n, p in psdnn.parameters(prefix="psdnn", skip_none=True)
         }
-        J += nnfunc(x=dx[:, -1], context=context, **weights)["y"]
+        J += nnfunc(x=dx[:, -1], context=context, **weights)["V"]
 
     # add penalty cost (if needed)
     if soft:

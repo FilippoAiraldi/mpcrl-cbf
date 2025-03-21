@@ -82,7 +82,7 @@ def compute_learned_value_function(
     if "pwqnn" in tc_components:
         hidden_features = mpc_pars["pwqnn.input_layer.weight"].shape[0]
         pwqnn = nn2function(PwqNN(Env.ns, hidden_features), "pwqnn")
-        V += pwqnn(x=X, **mpc_pars)["y"].toarray().reshape(N, N)
+        V += pwqnn(x=X, **mpc_pars)["V"].toarray().reshape(N, N)
     return V
 
 

@@ -53,6 +53,6 @@ def nn2function(net: Mlp | PsdNN | PwqNN, prefix: str) -> cs.Function:
         inputs + list(parameters.values()),
         outputs,
         input_names + list(parameters.keys()),
-        ["y"],
+        ["V"],
         {"cse": True},
     )

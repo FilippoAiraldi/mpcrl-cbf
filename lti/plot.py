@@ -210,7 +210,7 @@ def plot_terminal_cost_evolution(
                     agent, ep = partition[i]
                     w = {n: params_history[n][agent, ep] for n in pwqnn.name_in()[1:]}
                     partition[i] = agent, ep2idx[ep]
-                    V_[i] = pwqnn(x=Xf, **w)["y"].toarray().reshape(N, N)
+                    V_[i] = pwqnn(x=Xf, **w)["V"].toarray().reshape(N, N)
                 return partition, V_
 
             data = Parallel(n_jobs=n_jobs, return_as="generator_unordered")(

@@ -123,14 +123,14 @@ def create_scmpc(
     if "pwqnn" in terminal_cost:
         pwqnn = PwqNN(ns, hidden_size)
         nnfunc = nn2function(pwqnn, "pwqnn")
-        nnfunc = nnfunc.factory("F", nnfunc.name_in(), ("y", "grad:y:x", "hess:y:x:x"))
+        nnfunc = nnfunc.factory("F", nnfunc.name_in(), ("V", "grad:V:x", "hess:V:x:x"))
         weights = {
             n: scmpc.parameter(n, p.shape)
             for n, p in pwqnn.parameters(prefix="pwqnn", skip_none=True)
         }
         output = nnfunc(x=x0, **weights)
         dx = xT - x0
-        val, jac, hess = output["y"], output["grad_y_x"], output["hess_y_x_x"]
+        val, jac, hess = output["V"], output["grad_V_x"], output["hess_V_x_x"]
         J += val + cs.dot(jac, dx) + 0.5 * cs.bilin(hess, dx)
 
     # add penalty cost (if needed) and set the solver
