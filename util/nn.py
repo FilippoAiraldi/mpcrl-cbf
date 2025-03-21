@@ -1,14 +1,101 @@
+from collections.abc import Sequence
+from typing import Literal, TypeVar
+
 import casadi as cs
+from csnn import Linear, Module, ReLU
 from csnn.convex import PsdNN, PwqNN
-from csnn.feedforward import Mlp
+from csnn.convex.psd import _reshape_mat
+from numpy.typing import ArrayLike
+
+SymType = TypeVar("SymType", cs.SX, cs.MX)
 
 
-def nn2function(net: Mlp | PsdNN | PwqNN, prefix: str) -> cs.Function:
+class QuadrotorNN(PsdNN):
+    """Network for the `QuadrotorEnv` that combines positive semidefinite terminal
+    cost approximation and a class Kappa function approximation (with shared
+    parameters).
+
+    Parameters
+    ----------
+    in_features : int
+        Number of input features.
+    hidden_features : sequence of ints
+        Number of features in each hidden linear layer.
+    out_size : int
+        Size of the quadratic form elements (i.e., the side length of the PSD matrix).
+    out_shape : {"flat", "triu", "tril"}
+        Shape of the output PSD matrix. If "flat", the output is not reshaped in any
+        matrix. If "triu" or "tril", the output is reshaped as an upper or lower
+        triangular, but does not support batched inputs.
+    act : type of activation function, optional
+        Class of the activation function. By default, `ReLU` is used.
+    eps : array-like, optional
+        Value to add to the PSD matrix, e.g., to ensure it is positive definite. Should
+        be broadcastable to the shape `(out_size, out_size)`. By default, an identity
+        matrix with `1e-4` is used. Only used in the `quadform` method.
+
+    Raises
+    ------
+    ValueError
+        Raises if the number of hidden layers is less than 1.
+    """
+
+    def __init__(
+        self,
+        in_features: int,
+        hidden_features: Sequence[int],
+        out_size: int,
+        out_shape: Literal["flat", "triu", "tril"],
+        act: type[Module] = ReLU,
+        eps: ArrayLike | None = None,
+    ) -> None:
+        super().__init__(in_features, hidden_features, out_size, out_shape, act, eps)
+        self.cbf_head = Linear(hidden_features[-1], 1)
+
+    def _forward(self, input: SymType) -> tuple[SymType, SymType, SymType]:
+        h = self.hidden_layers(input)
+        ref = self.ref_head(h)
+        mat_flat = self.mat_head(h)
+        gamma = (cs.tanh(self.cbf_head(h)) + 1) / 2
+        return mat_flat, ref, gamma
+
+    def forward(self, input: SymType) -> tuple[SymType, SymType, SymType]:
+        mat, ref, gamma = self._forward(input)
+        if self._out_shape != "flat":
+            mat = _reshape_mat(mat, self._eps.size1(), self._out_shape)
+        return mat, ref, gamma
+
+    def terminal_cost_and_kappa(
+        self, x: SymType, context: SymType
+    ) -> tuple[SymType, SymType]:
+        """Computes the terminal cost quadratic form `(x - x_ref)' Q (x - x_ref)`, where
+        `Q` is the predicted the PSD matrix and `x_ref` the reference point, as well as
+        the class Kappa function's linear factor.
+
+        Parameters
+        ----------
+        x : SymType
+            The value at which the quadratic form is evaluated.
+        context : SymType
+            The context passed as input to the neural network for the prediction of the
+            PSD matrix and the reference point.
+
+        Returns
+        -------
+        SymType
+            The value of the quadratic form.
+        """
+        L_flat, ref, gamma = self._forward(context)
+        L = _reshape_mat(L_flat, self._eps.size1(), "tril")
+        return cs.bilin(L @ L.T + self._eps, x - ref), gamma
+
+
+def nn2function(net: QuadrotorNN | PwqNN, prefix: str) -> cs.Function:
     """Converts a neural network model into a CasADi function.
 
     Parameters
     ----------
-    net : Mlp, PsdNN, or PwqNN
+    net : QuadrotorNN, or PwqNN
         The neural network that must be converted to a function.
     prefix : str
         Prefix to add in front of the net's parameters. Used also to name the CasADi
@@ -19,7 +106,7 @@ def nn2function(net: Mlp | PsdNN | PwqNN, prefix: str) -> cs.Function:
     cs.Function
         A CasADi function with signature `"input" x "parameters" -> "output"`.
     """
-    if isinstance(net, (Mlp, PwqNN)):
+    if isinstance(net, PwqNN):
         in_features = (
             net.input_layer.in_features
             if isinstance(net, PwqNN)
@@ -29,9 +116,10 @@ def nn2function(net: Mlp | PsdNN | PwqNN, prefix: str) -> cs.Function:
 
         inputs = [x]
         input_names = ["x"]
-        raw_output = net.forward(x.T)
+        outputs = [net.forward(x.T)]
+        output_names = ["V"]
 
-    elif isinstance(net, PsdNN):
+    elif isinstance(net, QuadrotorNN):
         in_features = net.hidden_layers[0].in_features
         out_features = net.ref_head.weight.size1()
         context = net.sym_type.sym("x", in_features, 1)
@@ -39,20 +127,20 @@ def nn2function(net: Mlp | PsdNN | PwqNN, prefix: str) -> cs.Function:
 
         inputs = [x, context]
         input_names = ["x", "context"]
-        raw_output = net.quadform(x.T, context.T)
+        outputs = net.terminal_cost_and_kappa(x.T, context.T)
+        output_names = ["V", "gamma"]
 
     else:
         raise ValueError(
-            "The neural network model must be an instance of Mlp, PwqNN or PsdNN."
+            "The neural network model must be an instance of QuadrotorNN or PwqNN."
         )
 
-    outputs = [cs.simplify(raw_output.T if raw_output.is_row() else raw_output)]
     parameters = dict(net.parameters(prefix=prefix, skip_none=True))
     return cs.Function(
         prefix,
         inputs + list(parameters.values()),
-        outputs,
+        [cs.simplify(o) for o in outputs],
         input_names + list(parameters.keys()),
-        ["V"],
+        output_names,
         {"cse": True},
     )

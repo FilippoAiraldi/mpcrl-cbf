@@ -205,8 +205,7 @@ if __name__ == "__main__":
         "use_kappann": False,
         "bound_initial_state": False,
         "terminal_cost": set(),
-        "kappann_hidden_size": [],
-        "psdnn_hidden_sizes": [],
+        "nn_hidden_sizes": [],
     }
     timesteps = args.timesteps
     n_ep = args.n_episodes

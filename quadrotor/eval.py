@@ -13,7 +13,7 @@ sys.path.append(str(repo_dir))
 
 from env import QuadrotorEnv as Env
 
-from util.defaults import KAPPANN_HIDDEN, PSDNN_HIDDEN
+from util.defaults import QUADROTOR_NN_HIDDEN
 
 
 def get_controller(
@@ -151,14 +151,7 @@ if __name__ == "__main__":
     group.add_argument(
         "--use-kappann",
         action="store_true",
-        help="Whether to use an NN as the CBF class Kappa function.",
-    )
-    group.add_argument(
-        "--kappann-hidden",
-        type=int,
-        default=KAPPANN_HIDDEN,
-        nargs=2,
-        help="The number of hidden units in the CBF class Kappa MLP function, if used.",
+        help="Whether to use the NN to also provide CBF class Kappa function.",
     )
     group.add_argument(
         "--soft",
@@ -178,11 +171,12 @@ if __name__ == "__main__":
         help="Which type of terminal cost to use in the MPC controller.",
     )
     group.add_argument(
-        "--psdnn-hidden",
+        "--nn-hidden",
         type=int,
-        default=PSDNN_HIDDEN,
+        default=QUADROTOR_NN_HIDDEN,
         nargs=2,
-        help="The number of hidden units in the PSDNN terminal cost, if used.",
+        help="The number of hidden units in the NN for terminal cost and class Kappa "
+        "function, if used.",
     )
     group = parser.add_argument_group(
         "Scenario MPC (SCMPC) options (used only when `controller=scmpc`)"
@@ -243,11 +237,10 @@ if __name__ == "__main__":
             "horizon",
             "dcbf",
             "use_kappann",
-            "kappann_hidden",
             "soft",
             "bound_initial_state",
             "terminal_cost",
-            "psdnn_hidden",
+            "nn_hidden",
             "scenarios",
         ):
             setattr(args, attr, data_args[attr])
@@ -268,8 +261,7 @@ if __name__ == "__main__":
         "bound_initial_state": args.bound_initial_state,
         "terminal_cost": tcost,
         "scenarios": args.scenarios,
-        "kappann_hidden_size": args.kappann_hidden,
-        "psdnn_hidden_sizes": args.psdnn_hidden,
+        "nn_hidden_sizes": args.nn_hidden,
     }
     n_eval = args.n_eval
     ts = args.timesteps

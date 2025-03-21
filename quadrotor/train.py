@@ -18,7 +18,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from controllers.scmpc import create_scmpc
 from env import QuadrotorEnv as Env
 
-from util.defaults import KAPPANN_HIDDEN, PSDNN_HIDDEN
+from util.defaults import QUADROTOR_NN_HIDDEN
 from util.wrappers import RecordSolverTime
 
 
@@ -61,7 +61,7 @@ def train_one_agent(
     exploration_strength: tuple[npt.NDArray[np.floating], float],
     episodes: int,
     timesteps: int,
-    pretrained_psdnn_weights: dict[str, npt.NDArray[np.floating]] | None,
+    pretrained_nn_weights: dict[str, npt.NDArray[np.floating]] | None,
     seed: RngType,
     n: int,
 ) -> tuple[
@@ -93,8 +93,8 @@ def train_one_agent(
         The number of episodes to train the agent for
     timesteps : int
         The number of timesteps to run each evaluation for.
-    pretrained_psdnn_weights : dict of str to array of float, optional
-        The weights of the PSDNN terminal cost from a pre-trained model.
+    pretrained_nn_weights : dict of str to array of float, optional
+        The weights of the NN terminal cost + Kappa function from a pre-trained model.
     seed : int
         The seed for the random number generator.
     n : int
@@ -117,22 +117,17 @@ def train_one_agent(
 
     # create the SCMPC controller
     set_sym_type("MX")
-    scmpc, kappann, psdnn = create_scmpc(**scmpc_kwargs, env=env)
+    scmpc, net = create_scmpc(**scmpc_kwargs, env=env)
     scmpc = RecordSolverTime(scmpc)
 
     # initialize learnable parameters
     sym_pars = scmpc.parameters
     learnable_pars_: list[LearnableParameter] = []
-    if kappann is not None:
-        learnable_pars_.extend(
-            LearnableParameter(name, weight.shape, weight, sym=sym_pars[name])
-            for name, weight in init_parameters(kappann, prefix="kappann", seed=rng)
-        )
-    if psdnn is not None:
+    if net is not None:
         source = (
-            pretrained_psdnn_weights.items()
-            if pretrained_psdnn_weights
-            else init_parameters(psdnn, prefix="psdnn", seed=rng)
+            pretrained_nn_weights.items()
+            if pretrained_nn_weights
+            else init_parameters(net, prefix="nn", seed=rng)
         )
         learnable_pars_.extend(
             LearnableParameter(name, weight.shape, weight, sym=sym_pars[name])
@@ -253,14 +248,7 @@ if __name__ == "__main__":
     group.add_argument(
         "--use-kappann",
         action="store_true",
-        help="Whether to use an NN as the CBF class Kappa function.",
-    )
-    group.add_argument(
-        "--kappann-hidden",
-        type=int,
-        default=KAPPANN_HIDDEN,
-        nargs="+",
-        help="The number of hidden units in the CBF class Kappa MLP function, if used.",
+        help="Whether to use the NN to also provide CBF class Kappa function.",
     )
     group.add_argument(
         "--soft",
@@ -280,11 +268,12 @@ if __name__ == "__main__":
         help="Which type of terminal cost to use in the SCMPC controller.",
     )
     group.add_argument(
-        "--psdnn-hidden",
+        "--nn-hidden",
         type=int,
-        default=PSDNN_HIDDEN,
-        nargs="+",
-        help="The number of hidden units in the PSDNN terminal cost, if used.",
+        default=QUADROTOR_NN_HIDDEN,
+        nargs=2,
+        help="The number of hidden units in the NN for terminal cost and class Kappa "
+        "function, if used.",
     )
     group.add_argument(
         "--from-pre-train",
@@ -329,22 +318,21 @@ if __name__ == "__main__":
     args.terminal_cost = set(args.terminal_cost)
     print(f"Args: {args}\n")
 
-    # if specified, load the initial weights for the PSDNN terminal cost from a
-    # pre-trained model
+    # if specified, load the initial weights for the NN from a pre-trained model
     if args.from_pre_train:
         import torch
 
         data = torch.load(args.from_pre_train, weights_only=True)
-        expected_shape = data["args"]["psdnn_hidden"]
-        if not np.array_equal(args.psdnn_hidden, expected_shape):
+        expected_shape = data["args"]["nn_hidden"]
+        if not np.array_equal(args.nn_hidden, expected_shape):
             raise ValueError(
-                f"Hidden sizes mismatch: {args.psdnn_hidden} != {expected_shape}"
+                f"Hidden sizes mismatch: {args.nn_hidden} != {expected_shape}"
             )
         pt_weights = {}
         for name, weight in data["model_state_dict"].items():
             if name.endswith(".bias"):
                 weight = weight.reshape(1, -1)
-            pt_weights["psdnn." + name] = weight.numpy(force=True).astype(np.float64)
+            pt_weights["nn." + name] = weight.numpy(force=True).astype(np.float64)
     else:
         pt_weights = None
 
@@ -358,8 +346,7 @@ if __name__ == "__main__":
         "bound_initial_state": args.bound_initial_state,
         "terminal_cost": args.terminal_cost,
         "scenarios": args.scenarios,
-        "kappann_hidden_size": args.kappann_hidden,
-        "psdnn_hidden_sizes": args.psdnn_hidden,
+        "nn_hidden_sizes": args.nn_hidden,
     }
     lr = args.lr
     eps = args.exploration_eps

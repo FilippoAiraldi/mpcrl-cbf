@@ -62,4 +62,4 @@ TIME_MEAS = "t_proc_total"  # or t_wall_total
 DCBF_GAMMA = 0.95
 
 PWQNN_HIDDEN = 16
-PSDNN_HIDDEN = KAPPANN_HIDDEN = (16, 16)
+QUADROTOR_NN_HIDDEN = (16, 16)

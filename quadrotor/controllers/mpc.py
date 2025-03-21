@@ -6,9 +6,7 @@ import numpy as np
 import numpy.typing as npt
 from csnlp import Nlp
 from csnlp.wrappers import Mpc
-from csnn import ReLU, Sigmoid, init_parameters
-from csnn.convex import PsdNN
-from csnn.feedforward import Mlp
+from csnn import init_parameters
 from env import NORMALIZATION as N
 from env import QuadrotorEnv as Env
 from mpcrl.util.control import rk4
@@ -16,7 +14,7 @@ from mpcrl.util.seeding import RngType
 from scipy.linalg import solve_discrete_are as dlqr
 
 from util.defaults import DCBF_GAMMA, SOLVER_OPTS, TIME_MEAS
-from util.nn import nn2function
+from util.nn import QuadrotorNN, nn2function
 
 
 def get_discrete_time_dynamics(
@@ -55,12 +53,11 @@ def create_mpc(
     soft: bool,
     bound_initial_state: bool,
     terminal_cost: set[Literal["dlqr", "psdnn"]],
-    kappann_hidden_size: Sequence[int],
-    psdnn_hidden_sizes: Sequence[int],
+    nn_hidden_sizes: Sequence[int],
     env: Env | None = None,
     *_: Any,
     **__: Any,
-) -> tuple[Mpc[cs.MX], Mlp | None, PsdNN | None]:
+) -> tuple[Mpc[cs.MX], QuadrotorNN | None]:
     """Creates a nonlinear MPC controller for the `QuadrotorEnv` environment.
 
     Parameters
@@ -86,21 +83,20 @@ def create_mpc(
         network is used to approximate the terminal cost. Can also be a set of multiple
         terminal costs to use, at which point these are summed together; can also be an
         empty set, in which case no terminal cost is used.
-    kappann_hidden_size : sequence of int
-        The number of hidden units in the multilayer perceptron used to learn the
-        DCBF Kappa function, if `dcbf` is `True`.
-    psdnn_hidden_sizes : sequence of int
-        The number of hidden units in the positive semidefinite neural network, if used.
+    nn_hidden_sizes : sequence of int
+        The number of hidden units in the neural network for the  positive semidefinite
+        terminal cost and class Kappa function, if used.
     env : Env | None, optional
         The environment to build the MPC for. If `None`, a new default environment is
         instantiated.
 
     Returns
     -------
-    Mpc, Mlp (optional), and PsdNN (optional)
-        The multiple-shooting nonlinear MPC controller; the multilayer perceptron if
-        `dcbf` is `True`, otherwise `None`; the positive semidefinite terminal cost
-        neural net if `"psdnn"` is in `terminal_cost`, otherwise `None`.
+    Mpc, QuadrotorNN (optional)
+        The multiple-shooting nonlinear MPC controller; the neural network used to model
+        the positive semidefinite terminal cost and class Kappa function if `dcbf=True`
+        and `use_kappann=True` or if `"psdnn"` is in `terminal_cost`, otherwise `None`,
+        otherwise `None`.
     """
     if env is None:
         env = Env(0)
@@ -125,26 +121,27 @@ def create_mpc(
     dtdynamics = get_discrete_time_dynamics(env)
     mpc.set_nonlinear_dynamics(dtdynamics)
 
-    # set constraints for obstacle avoidance
+    # create the neural network for terminal cost and Kappa function if needed
+    dx = x - env.xf
     h0 = env.safety_constraint(x0)
-    ctx_features = ns + na + 1
-    context = (cs.veccat(x0, u_prev, h0) - N[0]) / N[1]
-    kappann = None
+    if (dcbf and use_kappann) or "psdnn" in terminal_cost:
+        ctx_features = ns + na + 1
+        net = QuadrotorNN(ctx_features, nn_hidden_sizes, ns, "tril")
+        weights = {
+            n: mpc.parameter(n, p.shape)
+            for n, p in net.parameters(prefix="nn", skip_none=True)
+        }
+        func = nn2function(net, "nn")
+        context = (cs.veccat(x0, u_prev, h0) - N[0]) / N[1]
+        outputs = func(x=dx[:, -1], context=context, **weights)
+        nn_V, nn_gamma = outputs["V"], outputs["gamma"]
+    else:
+        net = None
+
+    # set constraints for obstacle avoidance
     if dcbf:
         h = env.safety_constraint(x[:, 1:])
-        if use_kappann:
-            kappann = Mlp(
-                features=[ctx_features, *kappann_hidden_size, 1],
-                acts=[ReLU] * len(kappann_hidden_size) + [Sigmoid],
-            )
-            nnfunc = nn2function(kappann, "kappann")
-            weights = {
-                n: mpc.parameter(n, p.shape)
-                for n, p in kappann.parameters(prefix="kappann", skip_none=True)
-            }
-            gamma = nnfunc(x=context, **weights)["V"]
-        else:
-            gamma = DCBF_GAMMA
+        gamma = nn_gamma if use_kappann else DCBF_GAMMA
         decays = cs.power(1 - gamma, range(1, horizon + 1))
         dcbf = h - decays.T * h0  # unrolled CBF constraints
         slack = mpc.constraint("obs", dcbf, ">=", 0.0, soft=soft)[-1]
@@ -153,26 +150,18 @@ def create_mpc(
         slack = mpc.constraint("obs", h, ">=", 0.0, soft=soft)[-1]
 
     # compute stage cost
-    dx = x - env.xf
     Q = mpc.parameter("Q", (ns,))  # we square these to ensure PSD
     R = mpc.parameter("R", (na,))
     J = sum(cs.sumsqr(Q * dx[:, i]) + cs.sumsqr(R * u[:, i]) for i in range(horizon))
 
     # compute terminal cost
-    psdnn = None
     if "dlqr" in terminal_cost:
         ldynamics = dtdynamics.factory("dyn_lin", ("x", "u"), ("jac:xf:x", "jac:xf:u"))
         A, B = ldynamics(env.xf, env.a0)
         P = dlqr(A.toarray(), B.toarray(), np.diag(env.Q), np.diag(env.R))
         J += cs.bilin(P, dx[:, -1])
     if "psdnn" in terminal_cost:
-        psdnn = PsdNN(ctx_features, psdnn_hidden_sizes, ns, "tril", eps=1e-4)
-        nnfunc = nn2function(psdnn, "psdnn")
-        weights = {
-            n: mpc.parameter(n, p.shape)
-            for n, p in psdnn.parameters(prefix="psdnn", skip_none=True)
-        }
-        J += nnfunc(x=dx[:, -1], context=context, **weights)["V"]
+        J += nn_V
 
     # add penalty cost (if needed)
     if soft:
@@ -182,7 +171,7 @@ def create_mpc(
     mpc.minimize(J)
     solver = "ipopt"
     mpc.init_solver(SOLVER_OPTS[solver], solver, type="nlp")
-    return mpc, kappann, psdnn
+    return mpc, net
 
 
 def get_mpc_controller(*args: Any, seed: RngType = None, **kwargs: Any) -> tuple[
@@ -209,18 +198,15 @@ def get_mpc_controller(*args: Any, seed: RngType = None, **kwargs: Any) -> tuple
         The numerical weights of the parametric MPC controller.
     """
     # create the MPC
-    mpc, kappann, psdnn = create_mpc(*args, **kwargs)
+    mpc, net = create_mpc(*args, **kwargs)
 
-    # group its NN parameters (if any) into a dict and assign numerical values to them
+    # group its NN parameters (if any) into a dict and assign numerical values to them,
+    # as well as for the stage cost parameters
     sym_weights_, num_weights_ = {}, {}
-    for nn, prefix in [(kappann, "kappann"), (psdnn, "psdnn")]:
-        if nn is None:
-            continue
-        nn_weights = dict(init_parameters(nn, prefix=prefix, seed=seed))
+    if net is not None:
+        nn_weights = dict(init_parameters(net, prefix="nn", seed=seed))
         sym_weights_.update((k, mpc.parameters[k]) for k in nn_weights)
         num_weights_.update(nn_weights)
-
-    # also add the stage cost parameters
     for k in ("Q", "R"):
         sym_weights_[k] = mpc.parameters[k]
         num_weights_[k] = np.sqrt(getattr(Env, k))

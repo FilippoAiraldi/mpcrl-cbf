@@ -18,7 +18,7 @@ repo_dir = Path(__file__).resolve().parents[2]
 sys.path.append(str(repo_dir))
 
 from quadrotor.env import QuadrotorEnv as Env
-from util.defaults import PSDNN_HIDDEN
+from util.defaults import QUADROTOR_NN_HIDDEN
 
 DTYPE = torch.float64
 DEVICE = torch.device("cpu")
@@ -131,6 +131,7 @@ class TorchPsdNN(nn.Module):
         )
         self.mat_head = nn.Linear(hidden_features[-1], (out_size * (out_size + 1)) // 2)
         self.ref_head = nn.Linear(hidden_features[-1], out_size)
+        self.cbf_head = nn.Linear(hidden_features[-1], 1)  # NOTE: does not get trained
         self._mat_size = (out_size, out_size)
         self._tril_idx = torch.tril_indices(out_size, out_size)
         self._xf = AS_TENSOR(Env.xf)
@@ -286,7 +287,7 @@ if __name__ == "__main__":
     group.add_argument(
         "--psdnn-hidden",
         type=int,
-        default=PSDNN_HIDDEN,
+        default=QUADROTOR_NN_HIDDEN,
         nargs="+",
         help="The number of hidden units per layer in the PSDNN terminal cost.",
     )
