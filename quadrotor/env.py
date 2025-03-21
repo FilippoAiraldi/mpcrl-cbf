@@ -4,6 +4,7 @@ import casadi as cs
 import gymnasium as gym
 import numpy as np
 import numpy.typing as npt
+from mpcrl.util.control import rk4
 from scipy.stats import truncnorm
 
 from util.loose_box import LooseBox
@@ -91,11 +92,17 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         self.action_space = LooseBox(self.a_lb, self.a_ub, (self.na,), np.float64)
         self._max_timesteps = max_timesteps
 
-        # build the symbolic dynamics
-        x = cs.MX.sym("x", self.ns)
-        u = cs.MX.sym("u", self.na)
-        d = cs.MX.sym("d", self.nd)
+        # build the symbolic safety constraint for the cylindrical obstacle
+        ns, na, nd = self.ns, self.na, self.nd
+        x = cs.MX.sym("x", ns)
+        u = cs.MX.sym("u", na)
         pos, vel = x[:3], x[3:]
+        r2 = (self.radius_obs + self.radius_quadrotor) ** 2
+        h = cs.sumsqr(cs.cross(pos - self.pos_obs, self.dir_obs)) - r2  # >= 0
+        self.safety_constraint = cs.Function("h", [x], [h], ["x"], ["h"])
+
+        # build the symbolic dynamics
+        d = cs.MX.sym("d", nd)
         u_noisy = u + d
         az, phi, theta, psi = u_noisy[0], u_noisy[1], u_noisy[2], u_noisy[3]
         cphi, sphi = cs.cos(phi), cs.sin(phi)
@@ -107,16 +114,34 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
             (ctheta * cphi) * az - 9.81,
         )
         x_dot = cs.vertcat(vel, acc)
-        self.dynamics = cs.Function(
-            "dynamics", [x, u, d], [x_dot], ["x", "u", "d"], ["xf"], {"cse": True}
-        )
-        ode = {"x": x, "p": cs.vertcat(u, d), "ode": x_dot}
-        self.integrator = cs.integrator("intg", "cvodes", ode, 0.0, self.sampling_time)
 
-        # build the symbolic safety constraint for the cylindrical obstacle
-        r2 = (self.radius_obs + self.radius_quadrotor) ** 2
-        h = cs.sumsqr(cs.cross(pos - self.pos_obs, self.dir_obs)) - r2  # >= 0
-        self.safety_constraint = cs.Function("h", [x], [h], ["x"], ["h"])
+        # continuous-time dynamics + integration (for simulation)
+        dt = self.sampling_time
+        self.dynamics = cs.Function(
+            "dyn", [x, u, d], [x_dot], ["x", "u", "d"], ["xf"], {"cse": True}
+        )
+        self._integrator = cs.integrator(
+            "intg", "cvodes", {"x": x, "p": cs.vertcat(u, d), "ode": x_dot}, 0.0, dt
+        )
+
+        # approximate discrete-time + linearized discrete-time dynamics (for control)
+        x_next = cs.simplify(rk4(lambda x_: self.dynamics(x_, u, d), x, dt))
+        self.dtdynamics = cs.Function(
+            "dtdyn", [x, u, d], [x_next], ["x", "u", "d"], ["xf"], {"cse": True}
+        )
+        u_lin = cs.MX.sym("u_lin", na)
+        A = cs.evalf(cs.jacobian(x_dot, x))  # constant!
+        B = cs.substitute(
+            cs.jacobian(x_dot, u), cs.vertcat(u, d), cs.vertcat(u_lin, cs.DM.zeros(nd))
+        )
+        I = np.eye(ns)
+        A2 = A @ A
+        A3 = A2 @ A
+        Ad = cs.sparsify(I + dt * np.diag(np.ones(ns // 2), k=ns // 2))  # constant!
+        Bd = (dt * I + dt**2 / 2 * A + dt**3 / 6 * A2 + dt**4 / 24 * A3) @ B  # RK4
+        self.lindtdynamics = cs.Function(
+            "lindtdyn", [u_lin], [Ad, Bd], ["u_lin"], ["A", "B"], {"cse": True}
+        )
 
     @property
     def previous_action(self) -> ActType:
@@ -166,7 +191,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
 
         x = self._x
         d = self._dist_profile[self._t]
-        x_new = self.integrator(x0=x, p=np.concat((u, d)))["xf"].full().flatten()
+        x_new = self._integrator(x0=x, p=np.concat((u, d)))["xf"].full().flatten()
         assert self.observation_space.contains(x_new), f"invalid new state {x_new}"
 
         self._x = x_new
@@ -176,8 +201,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         return x_new, self._compute_cost(x, u, x_new), False, truncated, {}
 
     def _compute_cost(self, x: ObsType, u: ActType, x_new: ObsType) -> float:
-        # NOTE: for now, we penalize the violations of the least stringent CBF, i.e.,
-        # when h(x_new) >= 0
+        # NOTE: we penalize the violations of the least stringent CBF, i.e., h(x_+) < 0
         h = self.safety_constraint(x_new)
         cbf_violations = np.maximum(0.0, -h).sum()
         return (

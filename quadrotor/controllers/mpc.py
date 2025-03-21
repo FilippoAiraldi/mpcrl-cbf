@@ -9,41 +9,11 @@ from csnlp.wrappers import Mpc
 from csnn import init_parameters
 from env import NORMALIZATION as N
 from env import QuadrotorEnv as Env
-from mpcrl.util.control import rk4
 from mpcrl.util.seeding import RngType
 from scipy.linalg import solve_discrete_are as dlqr
 
 from util.defaults import DCBF_GAMMA, SOLVER_OPTS, TIME_MEAS
 from util.nn import QuadrotorNN, nn2function
-
-
-def get_discrete_time_dynamics(
-    env: Env, include_disturbance: bool = False
-) -> cs.Function:
-    """Constructs a discrete-time dynamics function for the quadrotor env.
-
-    Parameters
-    ----------
-    env : QuadrotorEnv
-        Quadrotor environment.
-    include_disturbance : bool, optional
-        Whether to include the disturbance in the dynamics or not.
-
-    Returns
-    -------
-    cs.Function
-        The discrete-time dynamics function.
-    """
-    x, u, d = env.dynamics.mx_in()
-    args = [x, u]
-    argnames = ["x", "u"]
-    if include_disturbance:
-        args.append(d)
-        argnames.append("d")
-    else:
-        d = 0.0
-    xf = cs.simplify(rk4(lambda x_: env.dynamics(x_, u, d), x, env.sampling_time))
-    return cs.Function("dynamics", args, [xf], argnames, ["xf"], {"cse": True})
 
 
 def create_mpc(
@@ -118,8 +88,7 @@ def create_mpc(
     mpc.constraint("max_dtilt", du, "<=", dtiltmax)
 
     # set the dynamics along the horizon
-    dtdynamics = get_discrete_time_dynamics(env)
-    mpc.set_nonlinear_dynamics(dtdynamics)
+    mpc.set_nonlinear_dynamics(lambda x_, u_: env.dtdynamics(x_, u_, 0.0))
 
     # create the neural network for terminal cost and Kappa function if needed
     dx = x - env.xf
@@ -156,8 +125,7 @@ def create_mpc(
 
     # compute terminal cost
     if "dlqr" in terminal_cost:
-        ldynamics = dtdynamics.factory("dyn_lin", ("x", "u"), ("jac:xf:x", "jac:xf:u"))
-        A, B = ldynamics(env.xf, env.a0)
+        A, B = env.lindtdynamics(env.a0)
         P = dlqr(A.toarray(), B.toarray(), np.diag(env.Q), np.diag(env.R))
         J += cs.bilin(P, dx[:, -1])
     if "psdnn" in terminal_cost:

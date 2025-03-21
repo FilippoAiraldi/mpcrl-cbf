@@ -4,7 +4,6 @@ from typing import Any, Literal
 import casadi as cs
 import numpy as np
 import numpy.typing as npt
-from controllers.mpc import get_discrete_time_dynamics
 from csnlp import Nlp
 from csnlp.wrappers import ScenarioBasedMpc
 from csnn import init_parameters
@@ -93,8 +92,7 @@ def create_scmpc(
     scmpc.constraint("max_dtilt", du, "<=", dtiltmax)
 
     # set the dynamics along the horizon
-    dtdynamics = get_discrete_time_dynamics(env, include_disturbance=True)
-    scmpc.set_nonlinear_dynamics(dtdynamics)
+    scmpc.set_nonlinear_dynamics(env.dtdynamics)
 
     # create the neural network for terminal cost and Kappa function if needed
     dx = x - env.xf
@@ -131,8 +129,7 @@ def create_scmpc(
 
     # compute terminal cost
     if "dlqr" in terminal_cost:
-        ldynamics = dtdynamics.factory("dyn_lin", ("x", "u"), ("jac:xf:x", "jac:xf:u"))
-        A, B = ldynamics(env.xf, env.a0)
+        A, B = env.lindtdynamics(env.a0)
         P = dlqr(A.toarray(), B.toarray(), np.diag(env.Q), np.diag(env.R))
         J += cs.bilin(P, dx[:, -1])
     if "psdnn" in terminal_cost:
