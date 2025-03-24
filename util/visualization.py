@@ -290,7 +290,6 @@ def plot_returns(
     for i, (datum, timesteps) in enumerate(zip(data, timestepss)):
         c = f"C{i}"
         returns = datum["cost"] * max_timesteps / timesteps  # n_agents x n_ep
-        returns = datum["cost"] / timesteps  # n_agents x n_ep
         episodes = np.arange(returns.shape[1])
         # print(f"cost: {np.mean(returns)} ± {np.std(returns)} | {np.median(returns)}")
         # in the first axis, flatten the first two axes as we do not distinguish between
