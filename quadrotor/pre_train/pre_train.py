@@ -86,10 +86,8 @@ def load_dataset(
     return train_ds, eval_ds, test_ds, normalizations, cost_to_go_ptp
 
 
-class TorchPsdNN(nn.Module):
-    """Network that predicts a terminal cost as a quadratic form. The quadratic matrix
-    is a positive semi-definite matrix (PSD) and is output as a Cholesky decomposition.
-    Also the reference point is learnable.
+class QuadrotorNN(nn.Module):
+    """PyTorch implementation of the `QuadrotorEnv` class.
 
     Parameters
     ----------
@@ -121,7 +119,7 @@ class TorchPsdNN(nn.Module):
     ) -> None:
         super().__init__()
         if len(hidden_features) < 1:
-            raise ValueError("Psdnn must have at least one hidden layer")
+            raise ValueError("The network must have at least one hidden layer")
         super().__init__()
         features = chain([in_features], hidden_features)
         self.hidden_layers = nn.Sequential(
@@ -177,7 +175,7 @@ class TorchPsdNN(nn.Module):
 
 
 def train(
-    dl: DataLoader, model: TorchPsdNN, loss_fn: Callable, optim: torch.optim.Optimizer
+    dl: DataLoader, model: QuadrotorNN, loss_fn: Callable, optim: torch.optim.Optimizer
 ) -> tuple[float, float, float]:
     """Trains the model on the given dataloader.
 
@@ -185,7 +183,7 @@ def train(
     ----------
     dl : DataLoader
         Data loader to use for training.
-    model : TorchPsdNN
+    model : TorchQuadrotorNN
         Model to train.
     loss_fn : Callable
         Loss function to use for training.
@@ -217,7 +215,7 @@ def train(
 
 
 def test(
-    dl: DataLoader, model: TorchPsdNN, loss_fn: Callable
+    dl: DataLoader, model: QuadrotorNN, loss_fn: Callable
 ) -> tuple[float, float, float]:
     """Tests the model on the given dataloader.
 
@@ -285,11 +283,11 @@ if __name__ == "__main__":
     )
     group = parser.add_argument_group("Neural topology options")
     group.add_argument(
-        "--psdnn-hidden",
+        "--nn-hidden",
         type=int,
         default=QUADROTOR_NN_HIDDEN,
         nargs="+",
-        help="The number of hidden units per layer in the PSDNN terminal cost.",
+        help="The number of hidden units per layer in the NN.",
     )
     group = parser.add_argument_group("Storing options")
     group.add_argument(
@@ -317,7 +315,7 @@ if __name__ == "__main__":
 
     # define model, loss function, and optimizer
     context_size = Env.ns + Env.na + 1
-    mdl = TorchPsdNN(context_size, args.psdnn_hidden, Env.ns).to(DEVICE, DTYPE)
+    mdl = QuadrotorNN(context_size, args.nn_hidden, Env.ns).to(DEVICE, DTYPE)
     loss_fn = nn.MSELoss()
     optimizer = torch.optim.Adam(mdl.parameters(), args.lr, weight_decay=1e-3)
 
