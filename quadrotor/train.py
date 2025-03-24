@@ -328,11 +328,10 @@ if __name__ == "__main__":
             raise ValueError(
                 f"Hidden sizes mismatch: {args.nn_hidden} != {expected_shape}"
             )
-        pt_weights = {}
-        for name, weight in data["model_state_dict"].items():
-            if name.endswith(".bias"):
-                weight = weight.reshape(1, -1)
-            pt_weights["nn." + name] = weight.numpy(force=True).astype(np.float64)
+        pt_weights = {
+            "nn." + n: np.atleast_2d(w.numpy(force=True)).astype(np.float64)
+            for n, w in data["model_state_dict"].items()
+        }
     else:
         pt_weights = None
 
