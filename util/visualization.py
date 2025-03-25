@@ -1,4 +1,5 @@
 from collections.abc import Collection
+from os import makedirs
 from typing import Any, Literal
 
 import matplotlib.pyplot as plt
@@ -8,7 +9,7 @@ from csnlp.util.io import load
 from matplotlib.axes import Axes
 from matplotlib.gridspec import GridSpec
 from mpl_toolkits.mplot3d import Axes3D
-from scipy.stats import sem
+from scipy.stats import gaussian_kde, sem
 
 
 def load_file(
@@ -109,7 +110,7 @@ def plot_single_violin(
     side: Literal["both", "low", "high"] = "both",
     gap: float = 0.0,
     **other_violin_kwargs: Any,
-):
+) -> None:
     """Plots a single violin plot.
 
     Parameters
@@ -269,6 +270,7 @@ def plot_cylinder(
 def plot_returns(
     data: Collection[dict[str, npt.NDArray[np.floating]]],
     names: Collection[str] | None = None,
+    pgfplotstables: bool = False,
 ) -> None:
     """Plots the returns of the simulations (normalized by the length of each
     episode).
@@ -280,6 +282,8 @@ def plot_returns(
         and `"states"`.
     names : collection of str, optional
         The names of the simulations to use in the plot.
+    pgfplotstables : bool, optional
+        If true, saves the plotted data to `.dat` files for PGFPLOTS.
     """
     _, (ax1, ax2) = plt.subplots(2, 1, constrained_layout=True)
 
@@ -305,6 +309,21 @@ def plot_returns(
         )
         plot_population(ax2, episodes, returns, axis=0, color=c, clip_min=0)
 
+        if pgfplotstables:
+            kde, r, r_pdf = _compute_kde(returns_flat, returns_flat.size, lb=0)
+            scale = r_pdf.max()
+            quartiles = np.quantile(returns_flat, (0.25, 0.5, 0.75))
+            quartile_pdf = kde(quartiles)
+            makedirs("pgfplotstables", exist_ok=True)
+            with open(f"pgfplotstables/returns_{i}.dat", "w") as f:
+                f.write("returns kde-point kde-pdf\n")
+                table = np.vstack((returns_flat, r, r_pdf / scale)).T
+                np.savetxt(f, table, fmt="%.6f")
+            with open(f"pgfplotstables/returns_quartiles_{i}.dat", "w") as f:
+                f.write("quartile-point quartile-pdf\n")
+                table = np.vstack((quartiles, quartile_pdf / scale)).T
+                np.savetxt(f, table, fmt="%.6f")
+
     ax1.set_xticks(range(len(data)))
     if names is not None:
         ax1.set_xticklabels(names)
@@ -318,6 +337,7 @@ def plot_returns(
 def plot_solver_times(
     data: Collection[dict[str, npt.NDArray[np.floating]]],
     names: Collection[str] | None = None,
+    pgfplotstables: bool = False,
 ) -> None:
     """Plots the solver times of the simulations. For agents with a solver for the
     state and action value functions, their computation times are plotted separately.
@@ -329,6 +349,8 @@ def plot_solver_times(
         `"sol_times"`.
     names : collection of str, optional
         The names of the simulations to use in the plot.
+    pgfplotstables : bool, optional
+        If true, saves the plotted data to `.dat` files for PGFPLOTS.
     """
     _, ax = plt.subplots(1, 1, constrained_layout=True)
 
@@ -348,6 +370,25 @@ def plot_solver_times(
             sol_times_V, sol_times_Q = sol_times_flat.T
             plot_single_violin(ax, i, sol_times_V, side="low", **kw)
             plot_single_violin(ax, i, sol_times_Q, side="high", **kw)
+
+        if pgfplotstables and sol_times_flat.ndim == 1:
+            # NOTE: solver times are usually too many to plot, so we pick at random
+            # at most a 1000 of them, but the KDE computations uses all of them
+            n = min(sol_times_flat.size, 1000)
+            kde, st, st_pdf = _compute_kde(sol_times_flat, n, log=True, lb=0)
+            scale = st_pdf.max()
+            quartiles = np.quantile(sol_times_flat, (0.25, 0.5, 0.75))
+            quartile_pdf = kde(quartiles)
+            random_idx = np.random.choice(sol_times_flat.size, n, replace=False)
+            makedirs("pgfplotstables", exist_ok=True)
+            with open(f"pgfplotstables/solvertimes_{i}.dat", "w") as f:
+                f.write("solvertimes kde-point kde-pdf\n")
+                table = np.vstack((sol_times_flat[random_idx], st, st_pdf / scale)).T
+                np.savetxt(f, table, fmt="%.6f")
+            with open(f"pgfplotstables/solvertimes_quartiles_{i}.dat", "w") as f:
+                f.write("quartile-point quartile-pdf\n")
+                table = np.vstack((quartiles, quartile_pdf / scale)).T
+                np.savetxt(f, table, fmt="%.6f")
 
     ax.set_xticks(range(len(data)))
     if names is not None:
@@ -456,3 +497,37 @@ def plot_training(
             ax.set_xlabel("Episode")
             ax.set_ylabel(name)
             ax._label_outer_xaxis(skip_non_rectangular_axes=False)
+
+
+def _compute_kde(
+    x: npt.ArrayLike, n: int, log: bool = False, lb: float = -np.inf, ub: float = np.inf
+) -> tuple[gaussian_kde, npt.ArrayLike, npt.ArrayLike]:
+    """Computes the kernel density estimation of the data `x` over `n` points.
+
+    Parameters
+    ----------
+    x : 1d array-like
+        The data to compute the KDE of.
+    n : int
+        The number of points over which to compute the density PDF.
+    log : bool, optional
+        If `True`, the `n` points are spaced logarithmically; by default `False`.
+    lb, ub : float, optional
+        The lower and upper bounds of the PDF, by default `-np.inf` and `np.inf`
+        respectively.
+
+    Returns
+    -------
+    tuple of 2 1d array-like
+        The x-axis values and the PDF values.
+    """
+    x = np.reshape(x, -1)
+    kernel = gaussian_kde(x)
+    sigma = np.median(np.abs(x - np.median(x))) / 0.6745
+    bandwidth = sigma * kernel.factor
+    extra_width = 3 * bandwidth
+    start = max(x.min() - extra_width, lb)
+    stop = min(x.max() + extra_width, ub)
+    xf = (np.geomspace if log else np.linspace)(start, stop, n)
+    pdf = kernel(xf)
+    return kernel, xf, pdf

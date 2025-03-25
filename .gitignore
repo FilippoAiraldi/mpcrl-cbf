@@ -141,3 +141,4 @@ tmp_casadi_compiler*.o
 tmp_casadi_compiler*.so
 lti/explicit_sol/tbxmanager/*
 nlp_hess_l.casadi
+pgfplotstables/*

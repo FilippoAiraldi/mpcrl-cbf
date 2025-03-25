@@ -3,6 +3,7 @@ import sys
 from collections.abc import Collection
 from itertools import repeat
 from multiprocessing import cpu_count
+from os import makedirs
 from pathlib import Path
 from typing import Any
 from warnings import warn
@@ -15,7 +16,7 @@ from joblib import Parallel, delayed
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Rectangle
-from mpcrl.util.control import dlqr
+from scipy.linalg import solve_discrete_are as dlqr
 from scipy.stats import sem
 
 lti_dir, repo_dir = Path(__file__).resolve().parents[:2]
@@ -64,6 +65,7 @@ def plot_states_and_actions(
     ax2 = fig.add_subplot(gs[0, 1])
     ax3 = fig.add_subplot(gs[1, 1], sharex=ax2)
     ax4 = fig.add_subplot(gs[2, :])
+    ax4_twin = ax4.twinx()
 
     env = Env(0)
     ns = env.ns
@@ -93,18 +95,28 @@ def plot_states_and_actions(
 
         states__ = states[..., :-1, :].reshape(-1, ns).T
         if not arg["dcbf"]:
-            violations = env.safety_constraints(states__)
+            h = env.safety_constraints(states__)
         else:
             actions__ = actions.reshape(-1, na).T
-            violations = env.dcbf_constraints(states__, actions__)
-        violations = -violations.toarray().T.reshape(n_ag, n_ep, timesteps, nc)
-        prob_violations = (violations > 0.0).any(3).mean((1, 2)) * 100.0
-        mean = prob_violations.mean(0)
-        se = sem(prob_violations)
-        violations_data.append((mean, se))
+            h = env.dcbf_constraints(states__, actions__)
+        h = h.toarray().T.reshape(n_ag, n_ep, timesteps, nc)
+        prob_violations = (h < 0.0).any(3).mean((1, 2)) * 100.0
+        prob_mean = prob_violations.mean(0)
+        prob_se = sem(prob_violations)
+        tot_violations = np.maximum(0, -h).sum((2, 3)).mean(1)
+        tot_mean = tot_violations.mean(0)
+        tot_se = sem(tot_violations)
+        violations_data.append((prob_mean, prob_se, tot_mean, tot_se))
 
-    violations_mean, violations_se = zip(*violations_data)
-    ax4.bar(names, violations_mean, yerr=violations_se, capsize=5)
+    prob_mean, prob_se, viol_mean, viol_se = zip(*violations_data)
+    width = 0.4
+    x = np.arange(len(names))
+    rects = ax4.bar(x, prob_mean, width, yerr=prob_se, capsize=5, color="C0")
+    ax4.bar_label(rects, padding=3)
+    rects = ax4_twin.bar(
+        x + width, viol_mean, width, yerr=viol_se, capsize=5, color="C1"
+    )
+    ax4_twin.bar_label(rects, padding=3)
 
     ax1.set_xlabel("$x_1$")
     ax1.set_ylabel("$x_2$")
@@ -113,12 +125,15 @@ def plot_states_and_actions(
     ax3.set_ylabel("$u_2$")
     ax3.set_xlabel("$k$")
     ax4.set_ylabel("Num. of Violations (%)")
+    ax4_twin.set_ylabel("Tot. Violations")
+    ax4.set_xticks(x + width / 2, names)
 
 
 def plot_terminal_cost_evolution(
     data: Collection[dict[str, npt.NDArray[np.floating]]],
     args: Collection[dict[str, Any]],
     names: Collection[str] | None = None,
+    pgfplotstables: bool = False,
     *_: Any,
     **__: Any,
 ) -> None:
@@ -135,6 +150,8 @@ def plot_terminal_cost_evolution(
         The arguments used to run the simulation scripts.
     names : collection of str, optional
         The names of the simulations to use in the plot.
+    pgfplotstables : bool, optional
+        If true, saves the plotted data to `.dat` files for PGFPLOTS.
     """
     terminal_cost_components = [arg.get("terminal_cost", set()) for arg in args]
     is_learning = ["n_agents" in arg for arg in args]  # n_agent only present in train.
@@ -143,7 +160,7 @@ def plot_terminal_cost_evolution(
     ):
         return
 
-    _, P = dlqr(Env.A, Env.B, Env.Q, Env.R)
+    P = dlqr(Env.A, Env.B, Env.Q, Env.R)
     value_func_dir = lti_dir / "explicit_sol"
     value_func_cache = {}
     pwqnn_cache = {}
@@ -168,8 +185,8 @@ def plot_terminal_cost_evolution(
         filename = "data"
         if arg["dcbf"]:
             filename += "_dcbf"
-        if arg["soft"]:
-            filename += "_soft"
+        # if arg["soft"]:  # NOTE: do not compare with the soft policy!
+        #     filename += "_soft"
         filename += ".npz"
         if filename in value_func_cache:
             value_func_data = value_func_cache[filename]
@@ -196,7 +213,7 @@ def plot_terminal_cost_evolution(
                 pwqnn = nn2function(PwqNN(Env.ns, hidden_features), "pwqnn")
                 pwqnn_cache[hidden_features] = pwqnn
 
-            tot_ep_to_plot = 20
+            tot_ep_to_plot = 100  # NOTE: adjust resolution here!
             n_jobs = cpu_count() // 4
             episodes = np.linspace(0, n_ep - 1, tot_ep_to_plot, dtype=int)
             ep2idx = dict(map(reversed, enumerate(episodes)))
@@ -238,6 +255,17 @@ def plot_terminal_cost_evolution(
         # store the log of the residuals averaged over agents for later plotting
         ep2idxs.append(ep2idx)
         logresiduals.append(np.log(np.nanmean(residuals / np.square(p2p), 0) + 1e-27))
+
+        # if requested, save NRMSE and R^2 data to disk
+        if pgfplotstables:
+            mean_nrmse, std_nrmse = np.nanmean(nrmse, 0), np.nanstd(nrmse, 0)
+            mean_r2, std_r2 = np.nanmean(r_squared, 0), np.nanstd(r_squared, 0)
+            table = np.vstack((episodes, mean_nrmse, std_nrmse, mean_r2, std_r2)).T
+
+            makedirs("pgfplotstables", exist_ok=True)
+            with open(f"pgfplotstables/nrmse_and_r2_{i}.dat", "w") as f:
+                f.write("episode nrmse-avg nrmse-std r2-avg r2-std\n")
+                np.savetxt(f, table, fmt=["%d"] + ["%.6f"] * (table.shape[1] - 1))
 
     # plot log of the residuals in a second loop
     cmap = plt.get_cmap("RdBu_r")
@@ -315,6 +343,11 @@ if __name__ == "__main__":
         help="Plots the evolution of the terminal cost approximation.",
     )
     parser.add_argument("--all", action="store_true", help="Plots all visualizations.")
+    parser.add_argument(
+        "--pgfplotstables",
+        action="store_true",
+        help="Generates the `.dat` files for PGFPLOTS.",
+    )
     args = parser.parse_args()
     if not any(
         (
@@ -340,15 +373,16 @@ if __name__ == "__main__":
         data.append(datum)
         print(filename.upper(), f"Args: {sim_arg}\n", sep="\n")
 
+    pgfplotstables = args.pgfplotstables
     if args.all or args.state_action:
         plot_states_and_actions(data, sim_args, unique_names)
     if args.all or args.returns:
-        plot_returns(data, unique_names)
+        plot_returns(data, unique_names, pgfplotstables)
     if args.all or args.solver_time:
-        plot_solver_times(data, unique_names)
+        plot_solver_times(data, unique_names, pgfplotstables)
     if args.all or args.training:
         plot_training(data, unique_names)
     if args.all or args.terminal_cost:
-        plot_terminal_cost_evolution(data, sim_args, unique_names)
+        plot_terminal_cost_evolution(data, sim_args, unique_names, pgfplotstables)
     if plt.get_fignums():
         plt.show()
