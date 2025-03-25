@@ -1,5 +1,5 @@
 import sys
-from argparse import ArgumentDefaultsHelpFormatter, ArgumentError, ArgumentParser
+from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
@@ -217,17 +217,27 @@ if __name__ == "__main__":
     # overwrite the number of controllers
     if args.from_train:
         if args.controller != "scmpc":
-            raise ArgumentError("Only SCMPC controllers can be loaded from file.")
+            raise RuntimeError("Only SCMPC controllers can be loaded from file.")
 
         from csnlp.util.io import load
 
         data = load(args.from_train)
         if "updates_history" not in data:
-            raise ArgumentError("No learning history found in the file.")
+            raise RuntimeError("No learning history found in the file.")
         params = data["updates_history"]
-        args.n_ctrl = next(iter(params.values())).shape[0]
-        print(f"Loaded {args.n_ctrl} controllers from {args.from_train}.")
+        args.n_ctrl = next(iter(params.values())).shape[0]  # n_eval is left untouched
+        data_args = data.pop("args")
+        for attr in (
+            "horizon",
+            "dcbf",
+            "soft",
+            "bound_initial_state",
+            "terminal_cost",
+            "scenarios",
+        ):
+            setattr(args, attr, data_args[attr])
         weights = [{n: w[i, -1] for n, w in params.items()} for i in range(args.n_ctrl)]
+        print(f"Loaded {args.n_ctrl} controllers from {args.from_train}.")
     else:
         weights = [None] * args.n_ctrl
 

@@ -256,8 +256,10 @@ if __name__ == "__main__":
     for fn in args.filenames:
         # load the data from the file - we need training args and final learned params
         data = load(fn)
-        sim_args = data.pop("args")
+        if "updates_history" not in data:
+            raise RuntimeError("No learning history found in the file.")
         mpc_pars = {n: p[idx, -1] for n, p in data["updates_history"].items()}
+        sim_args = data.pop("args")
         print(fn.upper(), f"Args: {sim_args}\n", sep="\n")
 
         # load the corresponding optima and compute the learned ones
