@@ -359,9 +359,11 @@ def plot_solver_times(
         sol_times = datum["sol_times"]  # n_agents x n_ep x timestep (x 2, optional)
         kw = {"showextrema": False, "quantiles": [0.25, 0.5, 0.75], "color": c}
 
-        # flatten the first three axes as we do not distinguish between different
-        # agents, episodes or time steps
-        sol_times_flat = sol_times.reshape(-1, *sol_times.shape[3:])
+        # discard some of the first solver times per episode to account for
+        # stabilization, average over the remaining time steps, and flatten the first
+        # two axes as we do not distinguish between different agents or episodes
+        ts = int(sol_times.shape[2] * 1.0)
+        sol_times_flat = sol_times[:, :, -ts:].mean(2).reshape(-1, *sol_times.shape[3:])
         # print(f"sol. time: {np.mean(st):e} ± {np.std(st):e} | {np.median(st):e}")
         if sol_times_flat.ndim == 1:
             plot_single_violin(ax, i, sol_times_flat, **kw)
@@ -372,18 +374,16 @@ def plot_solver_times(
             plot_single_violin(ax, i, sol_times_Q, side="high", **kw)
 
         if pgfplotstables and sol_times_flat.ndim == 1:
-            # NOTE: solver times are usually too many to plot, so we pick at random
-            # at most a 1000 of them, but the KDE computations uses all of them
-            n = min(sol_times_flat.size, 1000)
-            kde, st, st_pdf = _compute_kde(sol_times_flat, n, log=True, lb=0)
+            kde, st, st_pdf = _compute_kde(
+                sol_times_flat, sol_times_flat.size, log=True, lb=0
+            )
             scale = st_pdf.max()
             quartiles = np.quantile(sol_times_flat, (0.25, 0.5, 0.75))
             quartile_pdf = kde(quartiles)
-            random_idx = np.random.choice(sol_times_flat.size, n, replace=False)
             makedirs("pgfplotstables", exist_ok=True)
             with open(f"pgfplotstables/solvertimes_{i}.dat", "w") as f:
                 f.write("solvertimes kde-point kde-pdf\n")
-                table = np.vstack((sol_times_flat[random_idx], st, st_pdf / scale)).T
+                table = np.vstack((sol_times_flat, st, st_pdf / scale)).T
                 np.savetxt(f, table, fmt="%.6f")
             with open(f"pgfplotstables/solvertimes_quartiles_{i}.dat", "w") as f:
                 f.write("quartile-point quartile-pdf\n")
