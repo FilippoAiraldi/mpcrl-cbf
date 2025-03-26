@@ -71,8 +71,8 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
     D = np.asarray([[0.03], [0.01]])
     ns, na = B.shape
     nd = D.shape[1]
-    Q = np.eye(ns)
-    R = 0.1 * np.eye(na)
+    Q = np.ones(ns)
+    R = np.full(na, 0.1)
     a_bound = 0.5
     x_soft_bound = 3.0
     constraint_penalty = 1e3
@@ -138,8 +138,8 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
     def _compute_cost(self, x: ObsType, u: ActType) -> float:
         violations = np.maximum(0.0, -self.dcbf_constraints(x, u)).sum()
         return (
-            np.dot(np.dot(self.Q, x), x)
-            + np.dot(np.dot(self.R, u), u)
+            (self.Q * np.square(x)).sum()
+            + (self.R * np.square(u)).sum()
             + self.constraint_penalty * violations
         )
 

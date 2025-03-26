@@ -14,7 +14,7 @@ from csnlp.util.io import load
 from csnn.convex import PwqNN
 from joblib import Parallel, delayed
 from matplotlib import cm, colors
-from mpcrl.util.control import dlqr
+from scipy.linalg import solve_discrete_are as dlqr
 
 expl_sol_dir, lti_dir, repo_dir = Path(__file__).resolve().parents[:3]
 sys.path.extend((str(repo_dir), str(lti_dir)))
@@ -77,7 +77,7 @@ def compute_learned_value_function(
     tc_components = args.get("terminal_cost", set())
 
     if "dlqr" in tc_components:
-        _, P = dlqr(Env.A, Env.B, Env.Q, Env.R)
+        P = dlqr(Env.A, Env.B, np.diag(Env.Q), np.diag(Env.R))
         V += (X.transpose(1, 2, 0).dot(P) * X.transpose(1, 2, 0)).sum(-1)
     if "pwqnn" in tc_components:
         hidden_features = mpc_pars["pwqnn.input_layer.weight"].shape[0]

@@ -21,7 +21,7 @@ def get_dlqr_controller(
         A controller that maps the current state to the desired action, and returns also
         the time it took to compute the action.
     """
-    K, _ = dlqr(Env.A, Env.B, Env.Q, Env.R)
+    K, _ = dlqr(Env.A, Env.B, np.diag(Env.Q), np.diag(Env.R))
     a_min = Env.a_bound
     timer_func = perf_counter if "wall" in TIME_MEAS else process_time
 

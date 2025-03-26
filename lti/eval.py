@@ -240,6 +240,7 @@ if __name__ == "__main__":
         print(f"Loaded {args.n_ctrl} controllers from {args.from_train}.")
     else:
         weights = [None] * args.n_ctrl
+    print(f"Args: {args}\n")
 
     # prepare arguments to the simulation
     controller = args.controller

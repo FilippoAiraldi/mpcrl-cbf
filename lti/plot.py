@@ -160,7 +160,7 @@ def plot_terminal_cost_evolution(
     ):
         return
 
-    P = dlqr(Env.A, Env.B, Env.Q, Env.R)
+    P = dlqr(Env.A, Env.B, np.diag(Env.Q), np.diag(Env.R))
     value_func_dir = lti_dir / "explicit_sol"
     value_func_cache = {}
     pwqnn_cache = {}

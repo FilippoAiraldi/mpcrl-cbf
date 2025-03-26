@@ -8,8 +8,8 @@ from csnlp import Nlp
 from csnlp.wrappers import ScenarioBasedMpc
 from csnn.convex import PwqNN
 from env import ConstrainedLtiEnv
-from mpcrl.util.control import dlqr
 from mpcrl.util.seeding import RngType
+from scipy.linalg import solve_discrete_are as dlqr
 
 from util.defaults import DCBF_GAMMA, PWQNN_HIDDEN, SOLVER_OPTS, TIME_MEAS
 from util.nn import nn2function
@@ -112,13 +112,15 @@ def create_scmpc(
             scmpc.constraint_from_single("ubx", x_, "<=", x_bnd)
 
     # compute stage cost
-    J = sum(cs.bilin(Q, x[:, i]) + cs.bilin(R, u[:, i]) for i in range(horizon))
+    J = sum(
+        cs.sum1(Q * x[:, i] ** 2) + cs.sum1(R * u[:, i] ** 2) for i in range(horizon)
+    )
 
     # compute terminal cost
     xT = x[:, -1]
     pwqnn = None
     if "dlqr" in terminal_cost:
-        _, P = dlqr(A, B, Q, R)
+        P = dlqr(A, B, np.diag(Q), np.diag(R))
         J += cs.bilin(P, xT)
     if "pwqnn" in terminal_cost:
         pwqnn = PwqNN(ns, hidden_size)

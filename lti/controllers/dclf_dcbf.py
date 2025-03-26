@@ -6,7 +6,8 @@ import numpy as np
 import numpy.typing as npt
 from csnlp import Nlp
 from env import ConstrainedLtiEnv as Env
-from mpcrl.util.control import dcbf, dlqr
+from mpcrl.util.control import dcbf
+from scipy.linalg import solve_discrete_are as dlqr
 
 from util.defaults import DCBF_GAMMA, SOLVER_OPTS, TIME_MEAS
 
@@ -37,7 +38,7 @@ def create_dclf_dcbf_qcqp(env: Env | None = None, *_: Any, **__: Any) -> Nlp[cs.
     dclf_gamma = 0.5
     penalty_delta = 10.0
 
-    _, P = dlqr(env.A, env.B, env.Q, env.R)
+    P = dlqr(env.A, env.B, np.diag(env.Q), np.diag(env.R))
     lyapunov = lambda x_: cs.bilin(P, x_)
     V = lyapunov(x)
     V_next = lyapunov(x_next)
