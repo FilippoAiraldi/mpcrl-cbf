@@ -40,7 +40,6 @@ plt.rcParams["lines.markersize"] = 6
 
 def plot_states_and_actions(
     data: Collection[dict[str, npt.NDArray[np.floating]]],
-    args: Collection[dict[str, Any]],
     names: Collection[str] | None = None,
     *_: Any,
     **__: Any,
@@ -54,8 +53,6 @@ def plot_states_and_actions(
     data : collection of dictionaries (str, arrays)
         The dictionaries from different simulations, each containing the keys
         `"actions"` and `"states"`.
-    args : collection of dictionaries (str, Any)
-        The arguments used to run the simulation scripts.
     names : collection of str, optional
         The names of the simulations to use in the plot.
     """
@@ -70,22 +67,22 @@ def plot_states_and_actions(
     env = Env(0)
     ns = env.ns
     na = env.na
-    nc = env.dcbf_constraints.size1_out(0)
+    nc = env.safety_constraints.size1_out(0)
     x_max = env.x_soft_bound
     ax1.add_patch(Rectangle((-x_max, -x_max), 2 * x_max, 2 * x_max, fill=False))
 
     violations_data = []
 
-    for i, (arg, datum) in enumerate(zip(args, data)):
+    for i, datum in enumerate(data):
         actions = datum["actions"]  # n_agents x n_ep x timesteps x na
         states = datum["states"]  # n_agents x n_ep x timesteps + 1 x ns
         c = f"C{i}"
-        n_ag, n_ep, timesteps = actions.shape[:3]
-        time = np.arange(timesteps)
+        n_ag, n_ep, n_ts = actions.shape[:3]
+        time = np.arange(n_ts)
 
         # flatten the first two axes as we do not distinguish between different agents
-        actions_ = actions.reshape(-1, timesteps, na)
-        states_ = states.reshape(-1, timesteps + 1, ns)
+        actions_ = actions.reshape(-1, n_ts, na)
+        states_ = states.reshape(-1, n_ts + 1, ns)
         for state_traj, action_traj in zip(states_, actions_):
             ax1.plot(*state_traj.T, c)
             violating = (np.abs(state_traj) > x_max + 1e-3).any(1)
@@ -94,12 +91,7 @@ def plot_states_and_actions(
             ax3.step(time, action_traj[:, 1], c, where="post")
 
         states__ = states[..., :-1, :].reshape(-1, ns).T
-        if not arg["dcbf"]:
-            h = env.safety_constraints(states__)
-        else:
-            actions__ = actions.reshape(-1, na).T
-            h = env.dcbf_constraints(states__, actions__)
-        h = h.toarray().T.reshape(n_ag, n_ep, timesteps, nc)
+        h = env.safety_constraints(states__).toarray().T.reshape(n_ag, n_ep, n_ts, nc)
         prob_violations = (h < 0.0).any(3).mean((1, 2)) * 100.0
         prob_mean = prob_violations.mean(0)
         prob_se = sem(prob_violations)
@@ -375,7 +367,7 @@ if __name__ == "__main__":
 
     pgfplotstables = args.pgfplotstables
     if args.all or args.state_action:
-        plot_states_and_actions(data, sim_args, unique_names)
+        plot_states_and_actions(data, unique_names)
     if args.all or args.returns:
         plot_returns(data, unique_names, pgfplotstables)
     if args.all or args.solver_time:

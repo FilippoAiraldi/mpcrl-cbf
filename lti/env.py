@@ -4,10 +4,8 @@ import casadi as cs
 import gymnasium as gym
 import numpy as np
 import numpy.typing as npt
-from mpcrl.util.control import dcbf
 from mpcrl.util.geometry import ConvexPolytopeUniformSampler
 
-from util.defaults import DCBF_GAMMA
 from util.loose_box import LooseBox
 
 ObsType: TypeAlias = npt.NDArray[np.floating]
@@ -90,14 +88,9 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
         x = cs.MX.sym("x", self.ns)
         u = cs.MX.sym("u", self.na)
         x_next = self.A @ x + self.B @ u
-        dynamics = cs.Function("f", [x, u], [x_next], ["x", "u"], ["x_next"])
+        self.dynamics = cs.Function("f", [x, u], [x_next], ["x", "u"], ["x_next"])
         h = cs.veccat(x + x_max, x_max - x)  # >= 0
-        safety_constraints = cs.Function("h", [x], [h], ["x"], ["h"])
-        dcbf_ = dcbf(safety_constraints, x, u, dynamics, [lambda y: DCBF_GAMMA * y])
-        dcbf_constraints = cs.Function("h", [x, u], [dcbf_], ["x", "u"], ["dcbf"])
-        self.dynamics = dynamics
-        self.safety_constraints = safety_constraints
-        self.dcbf_constraints = dcbf_constraints
+        self.safety_constraints = cs.Function("h", [x], [h], ["x"], ["h"])
 
     def reset(
         self, *, seed: int | None = None, options: dict[str, Any] | None = None
@@ -136,7 +129,7 @@ class ConstrainedLtiEnv(gym.Env[ObsType, ActType]):
         return x_new, self._compute_cost(x, u), False, truncated, {}
 
     def _compute_cost(self, x: ObsType, u: ActType) -> float:
-        violations = np.maximum(0.0, -self.dcbf_constraints(x, u)).sum()
+        violations = np.maximum(0.0, -self.safety_constraints(x)).sum()
         return (
             (self.Q * np.square(x)).sum()
             + (self.R * np.square(u)).sum()
