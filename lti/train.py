@@ -161,16 +161,16 @@ def train_one_agent(
     if algorithm == "lstd-ql":
         sol_times = np.stack(
             (
-                np.reshape(agent.V.solver_time, (n_episodes, timesteps + 1))[:, 1:],
-                np.reshape(agent.Q.solver_time, (n_episodes, timesteps)),
+                np.reshape(agent.V.solver_time, (episodes, timesteps + 1))[:, 1:],
+                np.reshape(agent.Q.solver_time, (episodes, timesteps)),
             ),
             axis=-1,
         )
-        others.append(np.reshape(agent.td_errors, (n_episodes, timesteps)))
+        others.append(np.reshape(agent.td_errors, (episodes, timesteps)))
     elif algorithm == "lstd-dpg":
-        sol_times = np.reshape(agent.V.solver_time, (n_episodes, timesteps))
+        sol_times = np.reshape(agent.V.solver_time, (episodes, timesteps))
         others.append(
-            np.reshape(agent.policy_gradients, (n_episodes, learnable_pars.size)),
+            np.reshape(agent.policy_gradients, (episodes, learnable_pars.size)),
         )
     return R, U, X, sol_times, updates_history, *others
 
