@@ -375,7 +375,7 @@ def plot_solver_times(
 
         if pgfplotstables and sol_times_flat.ndim == 1:
             kde, st, st_pdf = _compute_kde(
-                sol_times_flat, sol_times_flat.size, log=True, lb=0
+                sol_times_flat, sol_times_flat.size, log=True, lb=1e-6
             )
             scale = st_pdf.max()
             quartiles = np.quantile(sol_times_flat, (0.25, 0.5, 0.75))
@@ -500,20 +500,30 @@ def plot_training(
 
 
 def _compute_kde(
-    x: npt.ArrayLike, n: int, log: bool = False, lb: float = -np.inf, ub: float = np.inf
+    x: npt.ArrayLike,
+    n: int,
+    cut: float = 3.0,
+    log: bool = False,
+    lb: float = -np.inf,
+    ub: float = np.inf,
 ) -> tuple[gaussian_kde, npt.ArrayLike, npt.ArrayLike]:
     """Computes the kernel density estimation of the data `x` over `n` points.
 
     Parameters
     ----------
     x : 1d array-like
-        The data to compute the KDE of.
+        The data for fitting the KDE.
     n : int
-        The number of points over which to compute the density PDF.
+        The number of points over which to compute the density PDF, spanning from
+        the two extrema +/- `cut` units of the bandwidth.
+    cut : float
+        Distance, in units of bandwidth or log span if `log=True`, to extend the density
+        past extreme datapoints. Set to `0` to limit the violin within the data range.
+        By default,  `3`.
     log : bool, optional
         If `True`, the `n` points are spaced logarithmically; by default `False`.
     lb, ub : float, optional
-        The lower and upper bounds of the PDF, by default `-np.inf` and `np.inf`
+        The lower and upper bounds of the PDF support, by default `-np.inf` and `np.inf`
         respectively.
 
     Returns
@@ -522,12 +532,20 @@ def _compute_kde(
         The x-axis values and the PDF values.
     """
     x = np.reshape(x, -1)
-    kernel = gaussian_kde(x)
-    sigma = np.median(np.abs(x - np.median(x))) / 0.6745
-    bandwidth = sigma * kernel.factor
-    extra_width = 3 * bandwidth
-    start = max(x.min() - extra_width, lb)
-    stop = min(x.max() + extra_width, ub)
-    xf = (np.geomspace if log else np.linspace)(start, stop, n)
-    pdf = kernel(xf)
-    return kernel, xf, pdf
+    kde = gaussian_kde(x)
+    xmin, xmax = x.min(), x.max()
+    if log:
+        log_xmin, log_xmax = np.log10(xmin), np.log10(xmax)
+        extra_width = cut / 10 * (log_xmax - log_xmin)
+        start = max(log_xmin - extra_width, np.log10(lb))
+        stop = min(log_xmax + extra_width, np.log10(ub))
+        xf = np.logspace(start, stop, n)
+    else:
+        sigma = np.median(np.abs(x - np.median(x))) / 0.6745
+        bandwidth = sigma * kde.factor
+        extra_width = cut * bandwidth
+        start = max(xmin - extra_width, lb)
+        stop = min(xmax + extra_width, ub)
+        xf = np.linspace(start, stop, n)
+    pdf = kde(xf)
+    return kde, xf, pdf
