@@ -102,6 +102,9 @@ def plot_states_and_actions(
             for i, ax in enumerate(axs_action):
                 ax.step(time[:-1], action_traj[..., i], c, where="post")
 
+    # plot initial posiiton and final position
+    ax_3d.plot(*np.vstack((Env.x0[:3], Env.xf[:3])).T, "red", marker="o", ls="none")
+
     ax_3d.set_xlabel("$p_x$")
     ax_3d.set_ylabel("$p_y$")
     ax_3d.set_zlabel("$p_z$")
