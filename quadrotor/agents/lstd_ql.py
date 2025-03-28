@@ -106,7 +106,7 @@ def get_lstd_qlearning_agent(
             if str_decay != 1.0
             else NoScheduling(str_value)
         )
-        exploration = EpsilonGreedyExploration(eps, str, mode="additive")
+        exploration = EpsilonGreedyExploration(eps, str)
     return QuadrotorEnvEnvLstdQLearningAgent(
         mpc=scmpc,
         discount_factor=1.0,
