@@ -284,7 +284,7 @@ if __name__ == "__main__":
         "--from-pre-train",
         type=str,
         default="",
-        help="Loads pre-trained PsdNN weights from the specified file.",
+        help="Loads pre-trained quadrotor NN weights from the specified file.",
     )
     group = parser.add_argument_group("Simulation options")
     group.add_argument(
