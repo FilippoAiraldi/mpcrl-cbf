@@ -200,12 +200,10 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         self._t += 1
         self._update_action(u)
         truncated = self._t >= self._max_timesteps
-        return x_new, self._compute_cost(x, u, x_new), False, truncated, {}
+        return x_new, self._compute_cost(x, u), False, truncated, {}
 
-    def _compute_cost(self, x: ObsType, u: ActType, x_new: ObsType) -> float:
-        # NOTE: we penalize the violations of the least stringent CBF, i.e., h(x_+) < 0
-        h = self.safety_constraint(x_new)
-        cbf_violations = np.maximum(0.0, -h).sum()
+    def _compute_cost(self, x: ObsType, u: ActType) -> float:
+        cbf_violations = np.maximum(0.0, -self.safety_constraint(x)).sum()
         return (
             (self.Q * np.square(x - self.xf)).sum()
             + (self.R * np.square(u)).sum()
