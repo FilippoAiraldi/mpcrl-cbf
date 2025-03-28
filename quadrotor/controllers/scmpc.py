@@ -7,7 +7,6 @@ import numpy.typing as npt
 from csnlp import Nlp
 from csnlp.wrappers import ScenarioBasedMpc
 from csnn import init_parameters
-from env import NORMALIZATION as N
 from env import QuadrotorEnv as Env
 from mpcrl.util.seeding import RngType
 from scipy.linalg import solve_discrete_are as dlqr
@@ -103,7 +102,7 @@ def create_scmpc(
             for n, p in net.parameters(prefix="nn", skip_none=True)
         }
         func = nn2function(net, "nn")
-        context = (cs.veccat(x0, u_prev, h0) - N[0]) / N[1]
+        context = cs.veccat(x0, u_prev, h0)
         outputs = func(x=dx[:, -1], context=context, **weights)
         nn_V, nn_gamma = outputs["V"], outputs["gamma"]
     else:

@@ -27,7 +27,7 @@ AS_TENSOR = partial(torch.as_tensor, dtype=DTYPE, device=DEVICE)
 
 def load_dataset(
     filename: str,
-) -> tuple[TensorDataset, TensorDataset, TensorDataset, dict[str, Tensor], float]:
+) -> tuple[TensorDataset, TensorDataset, TensorDataset, float]:
     """Loads the dataset and splits it into training, evaluation, and testing datasets.
     Also normalizes the input data."""
     # load the dataset
@@ -50,40 +50,46 @@ def load_dataset(
         - (Env.radius_obs + Env.radius_quadrotor) ** 2
     )
 
-    # normalize input data via the training means and stds
-    x_std, x_mean = torch.std_mean(states[train_idx], (0, 1))
-    up_std, up_mean = torch.std_mean(prev_actions[train_idx], (0, 1))
-    dist_std, dist_mean = dist.amax((0, 1)) - dist.amin((0, 1)), torch.zeros(
-        (1,), dtype=DTYPE, device=DEVICE  # preserve sign
-    )
-    normalizations = {
-        "state_mean": x_mean.cpu(),
-        "state_std": x_std.cpu(),
-        "action_mean": up_mean.cpu(),
-        "action_std": up_std.cpu(),
-        "dist_mean": dist_mean.cpu(),
-        "dist_std": dist_std.cpu(),
-    }
-    norm_states = (states - x_mean) / x_std
-    norm_prev_actions = (prev_actions - up_mean) / up_std
-    norm_dist = (dist - dist_mean) / dist_std
-
     # add the previous state to the dataset
-    norm_prev_states = torch.cat((norm_states[:, 0, None], norm_states[:, :-1]), dim=1)
+    prev_states = torch.cat(
+        (states[:, 0, None], states[:, 0, None], states[:, :-2]), dim=1
+    )
 
-    # split the normalized data into training, evaluation, and testing
+    # split the data into training, evaluation, and testing
     train_ds, eval_ds, test_ds = (
         TensorDataset(
-            norm_states[idx].reshape(-1, states.shape[-1]),
-            norm_prev_states[idx].reshape(-1, states.shape[-1]),
-            norm_prev_actions[idx].reshape(-1, prev_actions.shape[-1]),
-            norm_dist[idx].reshape(-1, norm_dist.shape[-1]),
+            states[idx].reshape(-1, states.shape[-1]),
+            prev_states[idx].reshape(-1, states.shape[-1]),
+            prev_actions[idx].reshape(-1, prev_actions.shape[-1]),
+            dist[idx].reshape(-1, dist.shape[-1]),
             cost_to_go[idx].reshape(-1),
         )
         for idx in (train_idx, eval_idx, test_idx)
     )
 
-    return train_ds, eval_ds, test_ds, normalizations, cost_to_go_ptp
+    return train_ds, eval_ds, test_ds, cost_to_go_ptp
+
+
+class DynTanh(nn.Module):
+    """Dynamic tanh normalization layer from https://arxiv.org/abs/2503.10622.
+
+    Parameters
+    ----------
+    C : int
+        Number of input features.
+    init_factor : float, optional
+        Initial value of the input multiplicative factor. By default, `1.5`.
+    """
+
+    def __init__(self, C: int, init_factor: float = 0.5) -> None:
+        super().__init__()
+        self.factor = nn.Parameter(torch.full((C,), init_factor))
+        self.scale = nn.Parameter(torch.ones(C))
+        self.offset = nn.Parameter(torch.zeros(C))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        y = nn.functional.tanh(self.factor * x)
+        return self.offset.addcmul(y, self.scale)
 
 
 class QuadrotorNN(nn.Module):
@@ -121,6 +127,7 @@ class QuadrotorNN(nn.Module):
         if len(hidden_features) < 1:
             raise ValueError("The network must have at least one hidden layer")
         super().__init__()
+        self.normalization = DynTanh(in_features)
         features = chain([in_features], hidden_features)
         self.hidden_layers = nn.Sequential(
             *chain.from_iterable(
@@ -136,7 +143,7 @@ class QuadrotorNN(nn.Module):
         self._eps = eps
 
     def forward(self, context: Tensor) -> tuple[Tensor, Tensor]:
-        h = self.hidden_layers(context)
+        h = self.hidden_layers(self.normalization(context))
 
         ref = self.ref_head(h)
 
@@ -308,7 +315,7 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
 
     # load the dataset and get the dataloaders
-    train_ds, eval_ds, test_ds, norm, cost_to_go_ptp = load_dataset(args.dataset)
+    train_ds, eval_ds, test_ds, cost_to_go_ptp = load_dataset(args.dataset)
     train_dl = DataLoader(train_ds, batch_size, True)
     eval_dl = DataLoader(eval_ds, batch_size)
     test_dl = DataLoader(test_ds, batch_size)
@@ -342,7 +349,6 @@ if __name__ == "__main__":
                 "epoch": t,
                 "model_state_dict": mdl.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
-                "normalization": norm,
             }
             torch.save(checkpoint, f"{save_filename}_best.pt")
             msg = ", better model found!"

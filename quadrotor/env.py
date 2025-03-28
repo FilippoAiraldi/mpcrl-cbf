@@ -244,25 +244,3 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
             random_state=rng,
             size=(n, length, self.nd),
         )
-
-
-NORM_FACTORS = {
-    "state_mean": np.array(
-        [8.07228433, 8.18884441, 8.87013491, 1.00442793, 0.98396738, 0.81043894]
-    ),
-    "state_std": np.array(
-        [3.15806102, 3.07217073, 2.12150282, 1.52279413, 1.52750385, 1.48634886]
-    ),
-    "action_mean": np.array(
-        [8.65501820, 1.68711102e-02, -1.20967788e-02, -8.94206393e-04]
-    ),
-    "action_std": np.array([4.93880688, 0.22041036, 0.21879836, 0.03272187]),
-    "dist_mean": np.array([0.0]),
-    "dist_std": np.array([84.46027209]),
-}
-NORMALIZATION = tuple(
-    np.concatenate(
-        [NORM_FACTORS[name + suffix] for name in ("state", "action", "dist")]
-    )
-    for suffix in ("_mean", "_std")
-)

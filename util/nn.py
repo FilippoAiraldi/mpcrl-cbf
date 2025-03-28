@@ -1,13 +1,58 @@
-from collections.abc import Sequence
+from collections.abc import Generator, Sequence
 from typing import Literal, TypeVar
 
 import casadi as cs
+import numpy as np
 from csnn import Linear, Module, ReLU
 from csnn.convex import PsdNN, PwqNN
 from csnn.convex.psd import _reshape_mat
-from numpy.typing import ArrayLike
+from numpy.typing import ArrayLike, NDArray
 
 SymType = TypeVar("SymType", cs.SX, cs.MX)
+
+
+class DynTanh(Module[SymType]):
+    """Dynamic tanh normalization layer from https://arxiv.org/abs/2503.10622.
+
+    Parameters
+    ----------
+    num_features : int
+        Number of input features.
+    """
+
+    def __init__(self, num_features: int) -> None:
+        super().__init__()
+        self.num_features = num_features
+        self.factor = self.sym_type.sym("factor", 1, num_features)
+        self.scale = self.sym_type.sym("scale", 1, num_features)
+        self.offset = self.sym_type.sym("offset", 1, num_features)
+
+    def _custom_init(
+        self, *_, **__
+    ) -> Generator[tuple[str, NDArray[np.floating]], None, None]:
+        """Custom initialization of the parameters."""
+        yield "factor", np.full(self.factor.shape, 0.5)
+        yield "scale", np.ones(self.scale.shape)
+        yield "offset", np.zeros(self.offset.shape)
+
+    def forward(self, input: SymType) -> SymType:
+        """Computes the normalized output.
+
+        Parameters
+        ----------
+        input : SymType
+            The input tensor of shape `(batch_size, num_features)`.
+
+        Returns
+        -------
+        SymType
+            The output tensor of shape `(batch_size, num_features)`.
+        """
+        y = cs.tanh(self.factor * input)
+        return self.offset + self.scale * y
+
+    def extra_repr(self) -> str:
+        return f"{self.num_features}"
 
 
 class QuadrotorNN(PsdNN):
@@ -50,10 +95,11 @@ class QuadrotorNN(PsdNN):
         eps: ArrayLike | None = None,
     ) -> None:
         super().__init__(in_features, hidden_features, out_size, out_shape, act, eps)
+        self.normalization = DynTanh(in_features)
         self.cbf_head = Linear(hidden_features[-1], 1)
 
     def _forward(self, input: SymType) -> tuple[SymType, SymType, SymType]:
-        h = self.hidden_layers(input)
+        h = self.hidden_layers(self.normalization(input))
         ref = self.ref_head(h)
         mat_flat = self.mat_head(h)
         gamma = (cs.tanh(self.cbf_head(h)) + 1) / 2
