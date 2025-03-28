@@ -61,7 +61,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
     na = nd = 4
 
     # initial, final, mean and std of states
-    x0 = np.asarray([0.0, 0.0, 2.0, 0.0, 0.0, 0.0])
+    x0 = np.asarray([0.5, 0.0, 2.0, 0.0, 0.0, 0.0])
     xf = np.asarray([10.0, 10.0, 10.0, 0.0, 0.0, 0.0])
 
     # default action and action space bounds
