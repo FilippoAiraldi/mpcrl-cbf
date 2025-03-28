@@ -12,7 +12,7 @@ from env import QuadrotorEnv as Env
 from mpcrl.util.seeding import RngType
 from scipy.linalg import solve_discrete_are as dlqr
 
-from util.defaults import DCBF_GAMMA, SOLVER_OPTS, TIME_MEAS
+from util.defaults import DCBF_GAMMA, SAFETY_BACKOFF_SQRT, SOLVER_OPTS, TIME_MEAS
 from util.nn import QuadrotorNN, nn2function
 
 
@@ -106,15 +106,16 @@ def create_mpc(
         net = None
 
     # set constraints for obstacle avoidance
+    backoff = SAFETY_BACKOFF_SQRT**2
     if dcbf:
         h = env.safety_constraint(x[:, 1:])
         gamma = nn_gamma if use_kappann else DCBF_GAMMA
         decays = cs.power(1 - gamma, range(1, horizon + 1))
         dcbf = h - decays.T * h0  # unrolled CBF constraints
-        slack = mpc.constraint("obs", dcbf, ">=", 0.0, soft=soft)[-1]
+        slack = mpc.constraint("obs", dcbf, ">=", backoff, soft=soft)[-1]
     else:
         h = env.safety_constraint(x if bound_initial_state else x[:, 1:])
-        slack = mpc.constraint("obs", h, ">=", 0.0, soft=soft)[-1]
+        slack = mpc.constraint("obs", h, ">=", backoff, soft=soft)[-1]
 
     # compute stage cost
     Q = mpc.parameter("Q", (ns,))  # we square these to ensure PSD

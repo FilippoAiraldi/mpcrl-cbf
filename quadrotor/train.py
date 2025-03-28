@@ -18,7 +18,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from controllers.scmpc import create_scmpc
 from env import QuadrotorEnv as Env
 
-from util.defaults import QUADROTOR_NN_HIDDEN
+from util.defaults import QUADROTOR_NN_HIDDEN, SAFETY_BACKOFF_SQRT
 from util.wrappers import RecordSolverTime
 
 
@@ -121,7 +121,7 @@ def train_one_agent(
     scmpc = RecordSolverTime(scmpc)
 
     # initialize learnable parameters
-    sym_pars = scmpc.parameters
+    pars = scmpc.parameters
     learnable_pars_: list[LearnableParameter] = []
     if net is not None:
         source = (
@@ -130,18 +130,23 @@ def train_one_agent(
             else init_parameters(net, prefix="nn", seed=rng)
         )
         learnable_pars_.extend(
-            LearnableParameter(name, weight.shape, weight, sym=sym_pars[name])
+            LearnableParameter(name, weight.shape, weight, sym=pars[name])
             for name, weight in source
         )
     for name in ("Q", "R"):
         learnable_pars_.append(
             LearnableParameter(
                 name,
-                sym_pars[name].shape,
+                pars[name].shape,
                 np.sqrt(getattr(Env, name)).reshape(-1, 1),
-                sym=sym_pars[name],
+                sym=pars[name],
             )
         )
+    learnable_pars_.append(
+        LearnableParameter(
+            "backoff", pars["backoff"].shape, SAFETY_BACKOFF_SQRT, sym=pars["backoff"]
+        )
+    )
     learnable_pars = LearnableParametersDict(learnable_pars_)
 
     # instantiate and wrap the agent

@@ -12,7 +12,7 @@ from env import QuadrotorEnv as Env
 from mpcrl.util.seeding import RngType
 from scipy.linalg import solve_discrete_are as dlqr
 
-from util.defaults import DCBF_GAMMA, SOLVER_OPTS, TIME_MEAS
+from util.defaults import DCBF_GAMMA, SAFETY_BACKOFF_SQRT, SOLVER_OPTS, TIME_MEAS
 from util.nn import QuadrotorNN, nn2function
 
 
@@ -110,15 +110,16 @@ def create_scmpc(
         net = None
 
     # set constraints for obstacle avoidance
+    backoff = scmpc.parameter("backoff", (1,)) ** 2
     if dcbf:
         h = env.safety_constraint(x[:, 1:])
         gamma = nn_gamma if use_kappann else DCBF_GAMMA
         decays = cs.power(1 - gamma, range(1, horizon + 1))
         dcbf = h - decays.T * h0  # unrolled CBF constraints
-        slack = scmpc.constraint_from_single("obs", dcbf, ">=", 0.0, soft=soft)[-2]
+        slack = scmpc.constraint_from_single("obs", dcbf, ">=", backoff, soft=soft)[-2]
     else:
         h = env.safety_constraint(x if bound_initial_state else x[:, 1:])
-        slack = scmpc.constraint_from_single("obs", h, ">=", 0.0, soft=soft)[-2]
+        slack = scmpc.constraint_from_single("obs", h, ">=", backoff, soft=soft)[-2]
 
     # compute stage cost
     Q = scmpc.parameter("Q", (ns,))  # we square these to ensure PSD
@@ -164,7 +165,7 @@ def get_scmpc_controller(
         The seed used during creating of the neural networks parameters, if necessary.
     weights : dict of (str, array), optional
         The MPC weights to use in the controller. If `None`, the weights are initialized
-        randomly.
+        randomly or to default values.
 
     Returns
     -------
@@ -194,7 +195,8 @@ def get_scmpc_controller(
             sym_weights_[n] = sym_weight
             num_weights_[n] = weight
     else:
-        # initialize NN weights (randomly), as well as for the stage cost parameters
+        # initialize NN weights (randomly), as well as for the stage cost parameters and
+        # backoff
         if net is not None:
             nn_weights_ = dict(init_parameters(net, prefix="nn", seed=seed))
             sym_weights_.update((k, scmpc.parameters[k]) for k in nn_weights_)
@@ -202,6 +204,8 @@ def get_scmpc_controller(
         for k in ("Q", "R"):
             sym_weights_[k] = scmpc.parameters[k]
             num_weights_[k] = np.sqrt(getattr(Env, k))
+        sym_weights_["backoff"] = scmpc.parameters["backoff"]
+        num_weights_["backoff"] = SAFETY_BACKOFF_SQRT
 
     # group the symbolical inputs of the MPC controller
     primals = scmpc.nlp.x
