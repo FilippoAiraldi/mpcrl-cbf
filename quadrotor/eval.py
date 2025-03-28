@@ -1,6 +1,7 @@
 import sys
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from collections.abc import Callable
+from itertools import repeat
 from pathlib import Path
 from typing import Any, Literal
 
@@ -201,6 +202,12 @@ if __name__ == "__main__":
         help="Number of timesteps per each simulation.",
     )
     group.add_argument(
+        "--from-pre-train",
+        type=str,
+        default="",
+        help="Loads pre-trained quadrotor NN weights from the specified file.",
+    )
+    group.add_argument(
         "--from-train",
         type=str,
         default="",
@@ -226,8 +233,26 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    # if a training file is specified, load args and weights from it
-    if args.from_train:
+    # load weights from pre-training or training file
+    if args.from_pre_train and args.from_train:
+        raise ValueError(
+            "Cannot specify both `from_pre_train` and `from_train` arguments."
+        )
+    elif args.from_pre_train:
+        import torch
+
+        data = torch.load(args.from_pre_train, weights_only=True)
+        expected_shape = data["args"]["nn_hidden"]
+        if not np.array_equal(args.nn_hidden, expected_shape):
+            raise ValueError(
+                f"Hidden sizes mismatch: {args.nn_hidden} != {expected_shape}"
+            )
+        weights_ = {
+            "nn." + n: np.atleast_2d(w.numpy(force=True)).astype(np.float64)
+            for n, w in data["model_state_dict"].items()
+        }
+        weights = repeat(weights_)
+    elif args.from_train:
         from csnlp.util.io import load
 
         data = load(args.from_train)
@@ -247,7 +272,8 @@ if __name__ == "__main__":
         weights = data["weights"]
         weights = [{n: w[a] for n, w in weights.items()} for a in range(args.n_ctrl)]
     else:
-        weights = [None] * args.n_ctrl
+        weights = repeat(None)
+
     tcost = set(args.terminal_cost)
     print(f"Args: {args}\n")
 

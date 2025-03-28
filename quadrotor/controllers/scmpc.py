@@ -178,33 +178,21 @@ def get_scmpc_controller(
     # create the MPC
     scmpc, net = create_scmpc(*args, **kwargs)
 
-    # group its parameters (if any) into a dict and assign numerical values to them
+    # group its parameters (if any) into a dict and assign numerical values to them by
+    # either pulling from the given weights or initializing them
     sym_weights_, num_weights_ = {}, {}
-    if weights is not None:
-        # load numerical values from given weights
-        for n, weight in weights.items():
-            if n not in scmpc.parameters:
-                continue
-            sym_weight = scmpc.parameters[n]
-            if sym_weight.shape != weight.shape:
-                raise ValueError(
-                    f"Shape mismatch for parameter '{n}'. Expected "
-                    f"{sym_weight.shape}; got {weight.shape} instead."
-                )
-            sym_weights_[n] = sym_weight
-            num_weights_[n] = weight
-    else:
-        # initialize NN weights (randomly), as well as for the stage cost parameters and
-        # backoff
-        if net is not None:
-            nn_weights_ = dict(init_parameters(net, prefix="nn", seed=seed))
-            sym_weights_.update((k, scmpc.parameters[k]) for k in nn_weights_)
-            num_weights_.update(nn_weights_)
-        for k in ("Q", "R"):
+    if weights is None:
+        weights = {}
+    if net is not None:
+        nn_weights_ = dict(init_parameters(net, prefix="nn", seed=seed))
+        for k, v in nn_weights_.items():
             sym_weights_[k] = scmpc.parameters[k]
-            num_weights_[k] = np.sqrt(getattr(Env, k))
-        sym_weights_["backoff"] = scmpc.parameters["backoff"]
-        num_weights_["backoff"] = SAFETY_BACKOFF_SQRT
+            num_weights_[k] = weights.get(k, v)
+    for k in ("Q", "R"):
+        sym_weights_[k] = scmpc.parameters[k]
+        num_weights_[k] = weights.get(k, np.sqrt(getattr(Env, k)))
+    sym_weights_["backoff"] = scmpc.parameters["backoff"]
+    num_weights_["backoff"] = weights.get("backoff", SAFETY_BACKOFF_SQRT)
 
     # group the symbolical inputs of the MPC controller
     primals = scmpc.nlp.x
