@@ -98,7 +98,7 @@ def get_lstd_qlearning_agent(
     else:
         eps = (
             ExponentialScheduler(eps_value, eps_decay)
-            if str_decay != 1.0
+            if eps_decay != 1.0
             else NoScheduling(eps_value)
         )
         str = (
