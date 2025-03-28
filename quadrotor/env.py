@@ -60,9 +60,11 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
     ns = 6
     na = nd = 4
 
-    # initial, final, mean and std of states
+    # initial, final states and bounds
     x0 = np.asarray([0.5, 0.0, 2.0, 0.0, 0.0, 0.0])
     xf = np.asarray([10.0, 10.0, 10.0, 0.0, 0.0, 0.0])
+    x_lb = np.full(ns, -10.0)
+    x_ub = np.asarray([20.0, 20.0, 20.0, 10.0, 10.0, 10.0])
 
     # default action and action space bounds
     a0 = np.asarray([9.81, 0.0, 0.0, 0.0])
@@ -187,7 +189,7 @@ class QuadrotorEnv(gym.Env[ObsType, ActType]):
         self, action: npt.ArrayLike
     ) -> tuple[ObsType, float, bool, bool, dict[str, Any]]:
         u = np.asarray(action).reshape(self.na)
-        # assert self.action_space.contains(u), f"invalid action {u}"
+        assert self.action_space.contains(u), f"invalid action {u}"
 
         x = self._x
         d = self._dist_profile[self._t]

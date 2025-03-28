@@ -77,9 +77,7 @@ def create_scmpc(
 
     # create states, actions and disturbances
     scmpc = ScenarioBasedMpc(Nlp("MX"), scenarios, horizon, shooting="multi")
-    x_lb = np.full((ns, 1), -10.0)
-    x_ub = np.reshape([20.0, 20.0, 20.0, 10.0, 10.0, 10.0], (ns, 1))
-    x, _, x0 = scmpc.state("x", ns, lb=x_lb, ub=x_ub)
+    x, _, x0 = scmpc.state("x", ns, lb=env.x_lb[:, None], ub=env.x_ub[:, None])
     u, _ = scmpc.action("u", na, lb=env.a_lb[:, None], ub=env.a_ub[:, None])
     scmpc.disturbance("w", nd)
 
