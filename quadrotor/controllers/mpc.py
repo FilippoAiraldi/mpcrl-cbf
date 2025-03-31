@@ -158,10 +158,10 @@ def get_mpc_controller(*args: Any, seed: RngType = None, **kwargs: Any) -> tuple
     Returns
     -------
     callable from (array-like, QuadrotorEnv) to (array-like, float)
-        A controller that maps the current state to the desired action, and returns also
-        the time it took to compute the action.
+        A controller that maps the current state + env to the desired action, and
+        returns also the time it took to compute the action.
     dict of str to arrays
-        The numerical weights of the parametric MPC controller.
+        The numerical weights of the parametric MPC controller, if any.
     """
     # create the MPC
     mpc, net = create_mpc(*args, **kwargs)

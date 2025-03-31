@@ -84,8 +84,8 @@ def simulate_controller_once(
     timesteps : int
         The number of timesteps to run each evaluation for.
     weights : dict of str to array-like, optional
-        The weights (e.g., for neural networkds) to use in the controller. If `None`,
-        these are initialized randomly.
+        The weights (e.g., for neural networks) to use in the controller. If `None`,
+        these are initialized randomly or to default values.
     seed : int
         The seed for the random number generator.
 

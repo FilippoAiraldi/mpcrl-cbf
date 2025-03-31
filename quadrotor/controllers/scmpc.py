@@ -169,11 +169,10 @@ def get_scmpc_controller(
     Returns
     -------
     callable from (array-like, QuadrotorEnv) to (array-like, float)
-        A controller that maps the current state to the desired action, and returns also
-        the time it took to compute the action.
+        A controller that maps the current state + env to the desired action, and
+        returns also the time it took to compute the action.
     dict of str to arrays, optional
-        The numerical weights of the neural network used to learn the DCBF Kappa
-        function (used only for saving to disk for plotting).
+        The numerical weights of the parametric MPC controller, if any.
     """
     # create the MPC
     scmpc, net = create_scmpc(*args, **kwargs)
