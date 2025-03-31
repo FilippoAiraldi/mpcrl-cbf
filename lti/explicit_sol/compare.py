@@ -112,7 +112,7 @@ def compute_policy_on_partition(
     """
     N = partition.shape[0]
     hidden_size = mpc_pars["pwqnn.input_layer.weight"].shape[0]
-    mpc, _ = create_mpc(**mpc_kwargs, hidden_size=hidden_size)
+    mpc, _, _ = create_mpc(**mpc_kwargs, pwq_hidden=hidden_size)
 
     us = np.empty((N, Env.na))
     for k in range(N):

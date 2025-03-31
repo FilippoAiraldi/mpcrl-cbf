@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any, Literal
 
 import casadi as cs
@@ -6,27 +6,30 @@ import numpy as np
 import numpy.typing as npt
 from csnlp import Nlp
 from csnlp.wrappers import Mpc
+from csnn import init_parameters
 from csnn.convex import PwqNN
 from env import ConstrainedLtiEnv as Env
 from mpcrl.util.seeding import RngType
 from scipy.linalg import solve_discrete_are as dlqr
 
 from util.defaults import DCBF_GAMMA, PWQNN_HIDDEN, SOLVER_OPTS, TIME_MEAS
-from util.nn import nn2function
+from util.nn import ConLTIKappaNN, nn2function
 from util.wrappers import nostdout
 
 
 def create_mpc(
     horizon: int,
     dcbf: bool,
+    use_kappa_nn: bool,
+    kappa_nn_hidden: Sequence[int],
     soft: bool,
     bound_initial_state: bool,
     terminal_cost: set[Literal["dlqr", "pwqnn"]],
-    hidden_size: int = PWQNN_HIDDEN,
+    pwq_hidden: int = PWQNN_HIDDEN,
     env: Env | None = None,
     *_: Any,
     **__: Any,
-) -> tuple[Mpc[cs.MX], PwqNN | None]:
+) -> tuple[Mpc[cs.MX], PwqNN | None, ConLTIKappaNN | None]:
     """Creates a linear MPC controller for the `ConstrainedLtiEnv` env.
 
     Parameters
@@ -36,6 +39,12 @@ def create_mpc(
     dcbf : bool
         Whether to use discrete-time control barrier functions to enforce safety
         constraints or not.
+    use_kappann : bool
+        Whether to use a neural network to compute the class Kappa function for the CBF.
+        If `False`, a constant is used instead. Only used when `dcbf=True`.
+    kappa_nn_hidden : sequence of int
+        The number of hidden units in the neural network for the class Kappa function,
+        if used.
     soft : bool
         Whether to impose soft constraints on the states or not. If not, note that the
         optimization problem may become infeasible.
@@ -49,7 +58,7 @@ def create_mpc(
         network is used to approximate the terminal cost. Can also be a set of multiple
         terminal costs to use, at which point these are summed together; can also be an
         empty set, in which case no terminal cost is used.
-    hidden_size : int, optional
+    pwq_hidden : int, optional
         The number of hidden units in the piecewise quadratic neural network, if used.
     env : ConstrainedLtiEnv, optional
         The environment to build the MPC for. If `None`, a new default environment is
@@ -57,9 +66,10 @@ def create_mpc(
 
     Returns
     -------
-    Mpc and PwqNN (optional)
+    Mpc and PwqNN (optional) and ConLTIKappaNN (optional)
         The single-shooting MPC controller, as well as the piecewise quadratic
-        terminal cost neural net if `"pwqnn"` is in `terminal_cost`; otherwise, `None`.
+        terminal cost neural net if `"pwqnn"` is in `terminal_cost` and the class Kappa
+        function neural net if `dcbf=True` and `use_kappa_nn=True`; otherwise, `None`.
     """
     if env is None:
         env = Env(0)
@@ -78,13 +88,31 @@ def create_mpc(
     mpc.set_affine_dynamics(A, B)
     x = mpc.states["x"]
 
+    # create the neural network for the class Kappa function if needed
+    h0 = env.safety_constraints(x0)
+    nc = h0.size1()
+    if use_kappa_nn:
+        ctx_features = ns + nc
+        kappann = ConLTIKappaNN(ctx_features, kappa_nn_hidden, nc)
+        weights = {
+            n: mpc.parameter(n, p.shape)
+            for n, p in kappann.parameters(prefix="kappann", skip_none=True)
+        }
+        func = nn2function(kappann, "kappann")
+        context = cs.veccat(x0, h0)
+        nn_gamma = func(context=context, **weights)["gamma"].T
+    else:
+        kappann = None
+
     # set state constraints (the same for stage and terminal) - the initial constraint
     # is needed to penalize the current state in RL, but can be removed in other cases
     if dcbf:
-        h = env.safety_constraints(x)
-        # dcbf = h[:, 1:] - (1 - DCBF_GAMMA) * h[:, :-1]  # vanilla CBF constraints
-        decays = cs.power(1 - DCBF_GAMMA, range(1, horizon + 1))
-        dcbf = h[:, 1:] - h[:, 0] @ decays.T  # unrolled CBF constraints
+        h = env.safety_constraints(x[:, 1:])
+        gamma = nn_gamma if use_kappa_nn else np.full((nc, 1), DCBF_GAMMA)
+        decays = cs.hcat(
+            [cs.power(1 - gamma[i, 0], range(1, horizon + 1)) for i in range(nc)]
+        )
+        dcbf = h - decays.T * h0  # unrolled CBF constraints
         dcbf_lbx, dcbf_ubx = cs.vertsplit_n(dcbf, 2)
         if soft:
             _, _, slack = mpc.constraint("lbx", dcbf_lbx, ">=", 0.0, soft=True)
@@ -115,7 +143,7 @@ def create_mpc(
         P = dlqr(A, B, np.diag(Q), np.diag(R))
         J += cs.bilin(P, xT)
     if "pwqnn" in terminal_cost:
-        pwqnn = PwqNN(ns, hidden_size)
+        pwqnn = PwqNN(ns, pwq_hidden)
         nnfunc = nn2function(pwqnn, "pwqnn")
         nnfunc = nnfunc.factory("F", nnfunc.name_in(), ("V", "grad:V:x", "hess:V:x:x"))
         weights = {
@@ -133,7 +161,7 @@ def create_mpc(
     mpc.minimize(J)
     with nostdout():
         mpc.init_solver(SOLVER_OPTS["qpoases"], "qpoases", type="conic")
-    return mpc, pwqnn
+    return mpc, pwqnn, kappann
 
 
 def get_mpc_controller(
@@ -155,12 +183,16 @@ def get_mpc_controller(
         the time it took to compute the action.
     """
     # create the MPC
-    mpc, pwqnn = create_mpc(*args, **kwargs)
+    mpc, pwqnn, kappann = create_mpc(*args, **kwargs)
 
     # group its NN parameters (if any) into a vector and assign numerical values to them
     sym_weights_, num_weights_ = {}, {}
     if pwqnn is not None:
         nn_weights = dict(pwqnn.init_parameters(prefix="pwqnn", seed=seed))
+        sym_weights_.update((k, mpc.parameters[k]) for k in nn_weights)
+        num_weights_.update(nn_weights)
+    if kappann is not None:
+        nn_weights = dict(init_parameters(kappann, prefix="kappann", seed=seed))
         sym_weights_.update((k, mpc.parameters[k]) for k in nn_weights)
         num_weights_.update(nn_weights)
     sym_weights = cs.vvcat(sym_weights_.values())

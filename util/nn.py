@@ -6,6 +6,7 @@ import numpy as np
 from csnn import Linear, Module, ReLU
 from csnn.convex import PsdNN, PwqNN
 from csnn.convex.psd import _reshape_mat
+from csnn.feedforward import Mlp
 from numpy.typing import ArrayLike, NDArray
 
 SymType = TypeVar("SymType", cs.SX, cs.MX)
@@ -53,6 +54,34 @@ class DynTanh(Module[SymType]):
 
     def extra_repr(self) -> str:
         return f"{self.num_features}"
+
+
+class ConLTIKappaNN(Module[SymType]):
+    """Class Kappa function neural network for the constrained LTI environment.
+
+    Parameters
+    ----------
+    in_features : int
+        Number of input features (i.e., size of the context).
+    hidden_features : sequence of int
+        Number of features in each hidden linear layer.
+    output_features : int
+        Number of output features (i.e., size of the constraints).
+    """
+
+    def __init__(
+        self, in_features: int, hidden_features: Sequence[int], output_features: int
+    ) -> None:
+        super().__init__()
+        self.normalization = DynTanh(in_features)
+        self.mlp = Mlp(
+            (in_features, *hidden_features, output_features),
+            [ReLU] * len(hidden_features) + [None],
+        )
+
+    def forward(self, input: SymType) -> SymType:
+        gamma_unscaled = self.mlp(self.normalization(input))
+        return (cs.tanh(gamma_unscaled) + 1) / 2
 
 
 class QuadrotorNN(PsdNN):
@@ -136,12 +165,12 @@ class QuadrotorNN(PsdNN):
         return cs.bilin(L @ L.T + self._eps, x - ref), gamma
 
 
-def nn2function(net: QuadrotorNN | PwqNN, prefix: str) -> cs.Function:
+def nn2function(net: ConLTIKappaNN | QuadrotorNN | PwqNN, prefix: str) -> cs.Function:
     """Converts a neural network model into a CasADi function.
 
     Parameters
     ----------
-    net : QuadrotorNN, or PwqNN
+    net : ConLTIKappaNN, QuadrotorNN, or PwqNN
         The neural network that must be converted to a function.
     prefix : str
         Prefix to add in front of the net's parameters. Used also to name the CasADi
@@ -165,6 +194,15 @@ def nn2function(net: QuadrotorNN | PwqNN, prefix: str) -> cs.Function:
         outputs = [net.forward(x.T)]
         output_names = ["V"]
 
+    elif isinstance(net, ConLTIKappaNN):
+        in_features = net.mlp.layers[0].in_features
+        x = net.sym_type.sym("x", in_features, 1)
+
+        inputs = [x]
+        input_names = ["context"]
+        outputs = [net.forward(x.T)]
+        output_names = ["gamma"]
+
     elif isinstance(net, QuadrotorNN):
         in_features = net.hidden_layers[0].in_features
         out_features = net.ref_head.weight.size1()
@@ -178,7 +216,8 @@ def nn2function(net: QuadrotorNN | PwqNN, prefix: str) -> cs.Function:
 
     else:
         raise ValueError(
-            "The neural network model must be an instance of QuadrotorNN or PwqNN."
+            "The neural network model must be an instance of ConLTIKappaNN, "
+            "QuadrotorNN, or PwqNN."
         )
 
     parameters = dict(net.parameters(prefix=prefix, skip_none=True))

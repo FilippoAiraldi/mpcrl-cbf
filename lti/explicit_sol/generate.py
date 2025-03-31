@@ -40,7 +40,7 @@ def compute_value_func_and_policy_on_partition(
         Returns the partition itself and the value function and policy evaluated at the
         partition.
     """
-    mpc, _ = create_mpc(**mpc_kwargs)
+    mpc, _, _ = create_mpc(**mpc_kwargs)
     N = partition.shape[0]
     vs = np.empty(N)
     us = np.empty((N, mpc.na))

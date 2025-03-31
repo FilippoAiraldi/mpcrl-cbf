@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any, Literal
 
 import casadi as cs
@@ -6,13 +6,14 @@ import numpy as np
 import numpy.typing as npt
 from csnlp import Nlp
 from csnlp.wrappers import ScenarioBasedMpc
+from csnn import init_parameters
 from csnn.convex import PwqNN
 from env import ConstrainedLtiEnv
 from mpcrl.util.seeding import RngType
 from scipy.linalg import solve_discrete_are as dlqr
 
 from util.defaults import DCBF_GAMMA, PWQNN_HIDDEN, SOLVER_OPTS, TIME_MEAS
-from util.nn import nn2function
+from util.nn import ConLTIKappaNN, nn2function
 from util.wrappers import nostdout
 
 
@@ -20,14 +21,16 @@ def create_scmpc(
     horizon: int,
     scenarios: int,
     dcbf: bool,
+    use_kappa_nn: bool,
+    kappa_nn_hidden: Sequence[int],
     soft: bool,
     bound_initial_state: bool,
     terminal_cost: set[Literal["dlqr", "pwqnn"]],
-    hidden_size: int = PWQNN_HIDDEN,
+    pwq_hidden: int = PWQNN_HIDDEN,
     env: ConstrainedLtiEnv | None = None,
     *_: Any,
     **__: Any,
-) -> tuple[ScenarioBasedMpc[cs.MX], PwqNN | None]:
+) -> tuple[ScenarioBasedMpc[cs.MX], PwqNN | None, ConLTIKappaNN | None]:
     """Creates a linear Scenario-based MPC controller for the `ConstrainedLtiEnv` env.
 
     Parameters
@@ -39,6 +42,12 @@ def create_scmpc(
     dcbf : bool
         Whether to use discrete-time control barrier functions to enforce safety
         constraints or not.
+    use_kappann : bool
+        Whether to use a neural network to compute the class Kappa function for the CBF.
+        If `False`, a constant is used instead. Only used when `dcbf=True`.
+    kappa_nn_hidden : sequence of int
+        The number of hidden units in the neural network for the class Kappa function,
+        if used.
     soft : bool
         Whether to impose soft constraints on the states or not. If not, note that the
         optimization problem may become infeasible.
@@ -52,7 +61,7 @@ def create_scmpc(
         network is used to approximate the terminal cost. Can also be a set of multiple
         terminal costs to use, at which point these are summed together; can also be an
         empty set, in which case no terminal cost is used.
-    hidden_size : int, optional
+    pwq_hidden : int, optional
         The number of hidden units in the piecewise quadratic neural network, if used.
     env : ConstrainedLtiEnv, optional
         The environment to build the SCMPC for. If `None`, a new default environment is
@@ -60,9 +69,10 @@ def create_scmpc(
 
     Returns
     -------
-    Mpc and PwqNN (optional)
-        The single-shooting SCMPC controller, as well as the piecewise quadratic
-        terminal cost neural net if `"pwqnn"` is in `terminal_cost`; otherwise, `None`.
+    Mpc and PwqNN (optional) and ConLTIKappaNN (optional)
+        The single-shooting MPC controller, as well as the piecewise quadratic
+        terminal cost neural net if `"pwqnn"` is in `terminal_cost` and the class Kappa
+        function neural net if `dcbf=True` and `use_kappa_nn=True`; otherwise, `None`.
     """
     if env is None:
         env = ConstrainedLtiEnv(0)
@@ -82,13 +92,31 @@ def create_scmpc(
     scmpc.disturbance("w", nd)
     scmpc.set_affine_dynamics(A, B, D)
 
+    # create the neural network for the class Kappa function if needed
+    h0 = env.safety_constraints(x0)
+    nc = h0.size1()
+    if use_kappa_nn:
+        ctx_features = ns + nc
+        kappann = ConLTIKappaNN(ctx_features, kappa_nn_hidden, nc)
+        weights = {
+            n: scmpc.parameter(n, p.shape)
+            for n, p in kappann.parameters(prefix="kappann", skip_none=True)
+        }
+        func = nn2function(kappann, "kappann")
+        context = cs.veccat(x0, h0)
+        nn_gamma = func(context=context, **weights)["gamma"].T
+    else:
+        kappann = None
+
     # set state constraints (the same for stage and terminal) - the initial constraint
     # is needed to penalize the current state in RL, but can be removed in other cases
     if dcbf:
-        h = env.safety_constraints(x)
-        # dcbf = h[:, 1:] - (1 - DCBF_GAMMA) * h[:, :-1]  # vanilla CBF constraints
-        decays = cs.power(1 - DCBF_GAMMA, range(1, horizon + 1))
-        dcbf = h[:, 1:] - h[:, 0] @ decays.T  # unrolled CBF constraints
+        h = env.safety_constraints(x[:, 1:])
+        gamma = nn_gamma if use_kappa_nn else np.full((nc, 1), DCBF_GAMMA)
+        decays = cs.hcat(
+            [cs.power(1 - gamma[i, 0], range(1, horizon + 1)) for i in range(nc)]
+        )
+        dcbf = h - decays.T * h0  # unrolled CBF constraints
         dcbf_lbx, dcbf_ubx = cs.vertsplit_n(dcbf, 2)
         if soft:
             _, _, slack, _ = scmpc.constraint_from_single(
@@ -123,7 +151,7 @@ def create_scmpc(
         P = dlqr(A, B, np.diag(Q), np.diag(R))
         J += cs.bilin(P, xT)
     if "pwqnn" in terminal_cost:
-        pwqnn = PwqNN(ns, hidden_size)
+        pwqnn = PwqNN(ns, pwq_hidden)
         nnfunc = nn2function(pwqnn, "pwqnn")
         nnfunc = nnfunc.factory("F", nnfunc.name_in(), ("V", "grad:V:x", "hess:V:x:x"))
         weights = {
@@ -141,7 +169,7 @@ def create_scmpc(
     scmpc.minimize_from_single(J)
     with nostdout():
         scmpc.init_solver(SOLVER_OPTS["gurobi"], "gurobi", type="conic")
-    return scmpc, pwqnn
+    return scmpc, pwqnn, kappann
 
 
 def get_scmpc_controller(
@@ -169,14 +197,27 @@ def get_scmpc_controller(
         the time it took to compute the action.
     """
     # create the SCMPC
-    scmpc, pwqnn = create_scmpc(*args, **kwargs)
+    scmpc, pwqnn, kappann = create_scmpc(*args, **kwargs)
 
     # group its NN parameters (if any) into a vector and assign numerical values to them
     sym_weights_, num_weights_ = {}, {}
     if pwqnn is not None:
-        if nn_weights is None:
-            nn_weights = dict(pwqnn.init_parameters(prefix="pwqnn", seed=seed))
-        for n, weight in nn_weights.items():
+        weight_source = (
+            pwqnn.init_parameters(prefix="pwqnn", seed=seed)
+            if nn_weights is None
+            else nn_weights.items()
+        )
+        for n, weight in weight_source:
+            if n in scmpc.parameters:
+                sym_weights_[n] = scmpc.parameters[n]
+                num_weights_[n] = weight
+    if kappann is not None:
+        weight_source = (
+            init_parameters(kappann, prefix="kappann", seed=seed)
+            if nn_weights is None
+            else nn_weights.items()
+        )
+        for n, weight in weight_source:
             if n in scmpc.parameters:
                 sym_weights_[n] = scmpc.parameters[n]
                 num_weights_[n] = weight
