@@ -56,7 +56,7 @@ class DynTanh(Module[SymType]):
         return f"{self.num_features}"
 
 
-class ConLTIKappaNN(Module[SymType]):
+class ConLtiKappaNN(Module[SymType]):
     """Class Kappa function neural network for the constrained LTI environment.
 
     Parameters
@@ -165,7 +165,7 @@ class QuadrotorNN(PsdNN):
         return cs.bilin(L @ L.T + self._eps, x - ref), gamma
 
 
-def nn2function(net: ConLTIKappaNN | QuadrotorNN | PwqNN, prefix: str) -> cs.Function:
+def nn2function(net: ConLtiKappaNN | QuadrotorNN | PwqNN, prefix: str) -> cs.Function:
     """Converts a neural network model into a CasADi function.
 
     Parameters
@@ -194,13 +194,13 @@ def nn2function(net: ConLTIKappaNN | QuadrotorNN | PwqNN, prefix: str) -> cs.Fun
         outputs = [net.forward(x.T)]
         output_names = ["V"]
 
-    elif isinstance(net, ConLTIKappaNN):
+    elif isinstance(net, ConLtiKappaNN):
         in_features = net.mlp.layers[0].in_features
         x = net.sym_type.sym("x", in_features, 1)
 
         inputs = [x]
         input_names = ["context"]
-        outputs = [net.forward(x.T)]
+        outputs = [net.forward(x.T).T]
         output_names = ["gamma"]
 
     elif isinstance(net, QuadrotorNN):

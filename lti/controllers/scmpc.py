@@ -13,7 +13,7 @@ from mpcrl.util.seeding import RngType
 from scipy.linalg import solve_discrete_are as dlqr
 
 from util.defaults import DCBF_GAMMA, PWQNN_HIDDEN, SOLVER_OPTS, TIME_MEAS
-from util.nn import ConLTIKappaNN, nn2function
+from util.nn import ConLtiKappaNN, nn2function
 from util.wrappers import nostdout
 
 
@@ -30,7 +30,7 @@ def create_scmpc(
     env: Env | None = None,
     *_: Any,
     **__: Any,
-) -> tuple[ScenarioBasedMpc[cs.MX], PwqNN | None, ConLTIKappaNN | None]:
+) -> tuple[ScenarioBasedMpc[cs.MX], PwqNN | None, ConLtiKappaNN | None]:
     """Creates a linear Scenario-based MPC controller for the `ConstrainedLtiEnv` env.
 
     Parameters
@@ -97,14 +97,14 @@ def create_scmpc(
     nc = h0.size1()
     if use_kappa_nn:
         ctx_features = ns + nc
-        kappann = ConLTIKappaNN(ctx_features, kappa_nn_hidden, nc)
+        kappann = ConLtiKappaNN(ctx_features, kappa_nn_hidden, nc)
         weights = {
             n: scmpc.parameter(n, p.shape)
             for n, p in kappann.parameters(prefix="kappann", skip_none=True)
         }
         func = nn2function(kappann, "kappann")
         context = cs.veccat(x0, h0)
-        nn_gamma = func(context=context, **weights)["gamma"].T
+        nn_gamma = func(context=context, **weights)["gamma"]
     else:
         kappann = None
 
