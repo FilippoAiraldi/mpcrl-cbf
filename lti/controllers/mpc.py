@@ -164,9 +164,10 @@ def create_mpc(
     return mpc, pwqnn, kappann
 
 
-def get_mpc_controller(
-    *args: Any, seed: RngType = None, **kwargs: Any
-) -> Callable[[npt.NDArray[np.floating], Env], tuple[npt.NDArray[np.floating], float]]:
+def get_mpc_controller(*args: Any, seed: RngType = None, **kwargs: Any) -> tuple[
+    Callable[[npt.NDArray[np.floating], Env], tuple[npt.NDArray[np.floating], float]],
+    dict[str, npt.NDArray[np.floating]],
+]:
     """Returns the MPC controller as a callable function.
 
     Parameters
@@ -179,8 +180,10 @@ def get_mpc_controller(
     Returns
     -------
     callable from (array-like, ConstrainedLtiEnv) to (array-like, float)
-        A controller that maps the current state to the desired action, and returns also
-        the time it took to compute the action.
+        A controller that maps the current state + env to the desired action, and
+        returns also the time it took to compute the action.
+    dict of str to arrays
+        The numerical weights of the parametric MPC controller, if any.
     """
     # create the MPC
     mpc, pwqnn, kappann = create_mpc(*args, **kwargs)
@@ -212,4 +215,4 @@ def get_mpc_controller(
             u_opt, last_sol = func(x, num_weights, last_sol)
         return u_opt.toarray().reshape(-1), inner_solver.stats()[TIME_MEAS]
 
-    return _f
+    return _f, num_weights_

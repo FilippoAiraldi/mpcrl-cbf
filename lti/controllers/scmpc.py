@@ -8,7 +8,7 @@ from csnlp import Nlp
 from csnlp.wrappers import ScenarioBasedMpc
 from csnn import init_parameters
 from csnn.convex import PwqNN
-from env import ConstrainedLtiEnv
+from env import ConstrainedLtiEnv as Env
 from mpcrl.util.seeding import RngType
 from scipy.linalg import solve_discrete_are as dlqr
 
@@ -27,7 +27,7 @@ def create_scmpc(
     bound_initial_state: bool,
     terminal_cost: set[Literal["dlqr", "pwqnn"]],
     pwq_hidden: int = PWQNN_HIDDEN,
-    env: ConstrainedLtiEnv | None = None,
+    env: Env | None = None,
     *_: Any,
     **__: Any,
 ) -> tuple[ScenarioBasedMpc[cs.MX], PwqNN | None, ConLTIKappaNN | None]:
@@ -75,7 +75,7 @@ def create_scmpc(
         function neural net if `dcbf=True` and `use_kappa_nn=True`; otherwise, `None`.
     """
     if env is None:
-        env = ConstrainedLtiEnv(0)
+        env = Env(0)
     A = env.A
     B = env.B
     D = env.D
@@ -175,9 +175,12 @@ def create_scmpc(
 def get_scmpc_controller(
     *args: Any,
     seed: RngType = None,
-    nn_weights: dict[str, npt.NDArray[np.floating]] | None = None,
+    weights: dict[str, npt.NDArray[np.floating]] | None = None,
     **kwargs: Any,
-) -> Callable[[npt.NDArray[np.floating]], tuple[npt.NDArray[np.floating], float]]:
+) -> tuple[
+    Callable[[npt.NDArray[np.floating], Env], tuple[npt.NDArray[np.floating], float]],
+    dict[str, npt.NDArray[np.floating]],
+]:
     """Returns the Scenario-based MPC controller as a callable function.
 
     Parameters
@@ -186,15 +189,17 @@ def get_scmpc_controller(
         The arguments to pass to the `create_scmpc` method.
     seed : RngType, optional
         The seed used during creating of the PwqNN weights, if necessary.
-    nn_weights : dict of (str, array), optional
+    weights : dict of (str, array), optional
         The neural network weights to use in the controller. If `None`, the weights are
         initialized randomly.
 
     Returns
     -------
-    callable from array-like to (array-like, float)
-        A controller that maps the current state to the desired action, and returns also
-        the time it took to compute the action.
+    callable from (array-like, ConstrainedLtiEnv) to (array-like, float)
+        A controller that maps the current state + env to the desired action, and
+        returns also the time it took to compute the action.
+    dict of str to arrays, optional
+        The numerical weights of the parametric MPC controller, if any.
     """
     # create the SCMPC
     scmpc, pwqnn, kappann = create_scmpc(*args, **kwargs)
@@ -204,8 +209,8 @@ def get_scmpc_controller(
     if pwqnn is not None:
         weight_source = (
             pwqnn.init_parameters(prefix="pwqnn", seed=seed)
-            if nn_weights is None
-            else nn_weights.items()
+            if weights is None
+            else weights.items()
         )
         for n, weight in weight_source:
             if n in scmpc.parameters:
@@ -214,8 +219,8 @@ def get_scmpc_controller(
     if kappann is not None:
         weight_source = (
             init_parameters(kappann, prefix="kappann", seed=seed)
-            if nn_weights is None
-            else nn_weights.items()
+            if weights is None
+            else weights.items()
         )
         for n, weight in weight_source:
             if n in scmpc.parameters:
@@ -237,11 +242,11 @@ def get_scmpc_controller(
     horizon = scmpc.prediction_horizon
     n_scenarios = scmpc.n_scenarios
 
-    def _f(x, env: ConstrainedLtiEnv):
+    def _f(x, env: Env):
         nonlocal last_sol
         disturbances = env.sample_disturbance_profiles(n_scenarios, horizon)
         with nostdout():
             u_opt, last_sol = func(x, num_weights, disturbances.reshape(-1), last_sol)
         return u_opt.toarray().reshape(-1), inner_solver.stats()[TIME_MEAS]
 
-    return _f
+    return _f, num_weights_

@@ -60,9 +60,15 @@ def simulate_controller_once(
     n_eval: int,
     timesteps: int,
     reset_kwargs: dict[str, Any],
-    nn_weights: dict[str, npt.NDArray[np.floating]] | None,
+    weights: dict[str, npt.NDArray[np.floating]] | None,
     seed: int,
-) -> tuple[npt.NDArray[np.floating], ...]:
+) -> tuple[
+    npt.NDArray[np.floating],
+    npt.NDArray[np.floating],
+    npt.NDArray[np.floating],
+    npt.NDArray[np.floating],
+    dict[str, npt.NDArray[np.floating]],
+]:
     """Simulates one episode of the constrained LTI environment using the given
     controller.
 
@@ -78,22 +84,27 @@ def simulate_controller_once(
         The number of timesteps to run each evaluation for.
     reset_kwargs : dict of str to any
         Optional arguments to pass to the environment's reset method.
-    nn_weights : dict of str to array-like, optional
-        The neural network weights to use in the controller. If `None`, the weights are
-        initialized randomly.
+    weights : dict of str to array-like, optional
+        The weights (e.g., for neural networks) to use in the controller. If `None`,
+        these are initialized randomly or to default values.
     seed : int
         The seed for the random number generator.
 
     Returns
     -------
-    4 float arrays
-        Returns the total cost for each episode, two arrays containing the  actions and
-        states trajectories respectively, and an array of solution computation times.
+    4 float arrays and an dict
+        Returns the following objects:
+         - an array of the total cost for each episode
+         - two arrays containing the actions and states trajectories respectively
+         - an array of solution computation times
+         - a dict of the MPC numerical weights. If some `weights` were passed in, this
+           contains the same values. If not passed, this contains the randomly
+           initialized weights. Can be empty if MPC is not parametric.
     """
     # create env and controller only once
     env = Env(timesteps)
-    controller = get_controller(
-        controller_name, **controller_kwargs, nn_weights=nn_weights, seed=seed
+    controller, weights_ = get_controller(
+        controller_name, **controller_kwargs, weights=weights, seed=seed
     )
 
     # simulate the controller on the environment for n_eval evaluations
@@ -111,7 +122,7 @@ def simulate_controller_once(
             U[e, t] = u
             X[e, t + 1] = x
             sol_times[e, t] = sol_time
-    return R, U, X, sol_times
+    return R, U, X, sol_times, weights_
 
 
 if __name__ == "__main__":
@@ -282,8 +293,14 @@ if __name__ == "__main__":
         )
         for weights_, seed in zip(weights, seeds)
     )
-    keys = ("cost", "actions", "states", "sol_times")
+
+    # congregate data all together - weights is a dictionary, so requires further
+    # attention
+    keys = ("cost", "actions", "states", "sol_times", "weights")
     data_dict = dict(zip(keys, map(np.asarray, zip(*data))))
+    weights = data_dict.pop("weights")
+    wnames = weights[0].keys()
+    data_dict["weights"] = {n: np.asarray([d[n] for d in weights]) for n in wnames}
 
     # finally, store and plot the results. If no filepath is passed, always plot
     if args.save:
