@@ -256,7 +256,7 @@ def plot_terminal_cost_evolution(
                 pwqnn_cache[hidden_features] = pwqnn
 
             tot_ep_to_plot = 100  # NOTE: adjust resolution here!
-            n_jobs = cpu_count() // 4
+            n_jobs = cpu_count() // 2
             episodes = np.linspace(0, n_ep - 1, tot_ep_to_plot, dtype=int)
             ep2idx = dict(map(reversed, enumerate(episodes)))
             indices = filter(lambda ae: ae[1] in ep2idx, np.ndindex((n_agents, n_ep)))
