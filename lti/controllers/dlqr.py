@@ -10,16 +10,19 @@ from mpcrl.util.control import dlqr
 from util.defaults import TIME_MEAS
 
 
-def get_dlqr_controller(
-    *_: Any, **__: Any
-) -> Callable[[npt.NDArray[np.floating], Env], tuple[npt.NDArray[np.floating], float]]:
+def get_dlqr_controller(*_: Any, **__: Any) -> tuple[
+    Callable[[npt.NDArray[np.floating], Env], tuple[npt.NDArray[np.floating], float]],
+    dict[str, npt.NDArray[np.floating]],
+]:
     """Returns the discrete-time LQR controller with action saturation.
 
     Returns
     -------
     callable from (array-like, ConstrainedLtiEnv) to (array-like, float)
-        A controller that maps the current state to the desired action, and returns also
-        the time it took to compute the action.
+        A controller that maps the current state + env to the desired action, and
+        returns also the time it took to compute the action.
+    dict of str to arrays
+        The numerical weights of the parametric MPC controller, if any.
     """
     K, _ = dlqr(Env.A, Env.B, np.diag(Env.Q), np.diag(Env.R))
     a_min = Env.a_bound
@@ -30,4 +33,4 @@ def get_dlqr_controller(
         u = np.clip(-np.dot(K, x), -a_min, a_min)
         return u, timer_func() - t0
 
-    return _f
+    return _f, {}

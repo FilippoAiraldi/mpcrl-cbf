@@ -54,9 +54,10 @@ def create_dclf_dcbf_qcqp(env: Env | None = None, *_: Any, **__: Any) -> Nlp[cs.
     return nlp
 
 
-def get_dclf_dcbf_controller(
-    *args: Any, **kwargs: Any
-) -> Callable[[npt.NDArray[np.floating], Env], tuple[npt.NDArray[np.floating], float]]:
+def get_dclf_dcbf_controller(*args: Any, **kwargs: Any) -> tuple[
+    Callable[[npt.NDArray[np.floating], Env], tuple[npt.NDArray[np.floating], float]],
+    dict[str, npt.NDArray[np.floating]],
+]:
     """Returns the discrete-time LQR controller with action saturation.
 
     Parameters
@@ -66,9 +67,10 @@ def get_dclf_dcbf_controller(
 
     Returns
     -------
-    callable from (array-like, ConstrainedLtiEnv) to (array-like, float)
-        A controller that maps the current state to the desired action, and returns also
-        the time it took to compute the action.
+        A controller that maps the current state + env to the desired action, and
+        returns also the time it took to compute the action.
+    dict of str to arrays
+        The numerical weights of the parametric MPC controller, if any.
     """
     # create the QCQP and convert it to a function
     nlp = create_dclf_dcbf_qcqp(*args, **kwargs)
@@ -83,4 +85,4 @@ def get_dclf_dcbf_controller(
         u, last_sol = func(x, last_sol)
         return u.toarray().reshape(-1), func.stats()[TIME_MEAS]
 
-    return _f
+    return _f, {}
