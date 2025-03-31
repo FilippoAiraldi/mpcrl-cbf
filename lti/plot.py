@@ -146,9 +146,10 @@ def plot_safety(
         prob_violations = violating.any(3).mean((1, 2)) * 100.0
         prob_mean = prob_violations.mean(0)
         prob_se = sem(prob_violations)
-        tot_violations = np.maximum(0, -h).sum((2, 3)).mean(1)
-        tot_mean = tot_violations.mean(0)
-        tot_se = sem(tot_violations)
+        tot_violations = np.maximum(0, -h).sum((2, 3))
+        tot_violations_per_ep = tot_violations.mean(1)
+        tot_mean = tot_violations_per_ep.mean(0)
+        tot_se = sem(tot_violations_per_ep)
         violations_data.append((prob_mean, prob_se, tot_mean, tot_se))
 
     width = 0.4
@@ -160,6 +161,10 @@ def plot_safety(
         x + width, viol_mean, width, yerr=viol_se, capsize=5, color="C1"
     )
     ax_viol_tot.bar_label(rects, padding=3)
+    print(
+        "Violation probs (%):",
+        "; ".join(f"{m:0.6f}+/-{s:0.6f}" for m, s in zip(prob_mean, prob_se)),
+    )
 
     for i, ax_h in enumerate(axs_h):
         ax_h.set_xlabel("$k$")
