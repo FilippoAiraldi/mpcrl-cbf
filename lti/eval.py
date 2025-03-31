@@ -13,8 +13,6 @@ sys.path.append(str(repo_dir))
 
 from env import ConstrainedLtiEnv as Env
 
-from util.defaults import KAPPA_NN_HIDDEN
-
 
 def get_controller(
     controller_name: Literal["dlqr", "dclf-dcbf", "mpc", "scmpc"],
@@ -152,18 +150,6 @@ if __name__ == "__main__":
         help="Whether to use discrete-time CBF constraints in the MPC controller.",
     )
     group.add_argument(
-        "--use-kappa-nn",
-        action="store_true",
-        help="Whether to use the NN to also provide CBF class Kappa function.",
-    )
-    group.add_argument(
-        "--kappa-nn-hidden",
-        type=int,
-        default=KAPPA_NN_HIDDEN,
-        nargs="*",
-        help="The number of hidden units for the class Kappa NN function, if used.",
-    )
-    group.add_argument(
         "--soft",
         action="store_true",
         help="Whether to use soft constraints in the MPC controller.",
@@ -255,8 +241,6 @@ if __name__ == "__main__":
         for attr in (
             "horizon",
             "dcbf",
-            "use_kappa_nn",
-            "kappa_nn_hidden",
             "soft",
             "bound_initial_state",
             "terminal_cost",
@@ -274,8 +258,6 @@ if __name__ == "__main__":
     controller_kwargs = {
         "horizon": args.horizon,
         "dcbf": args.dcbf,
-        "use_kappa_nn": args.use_kappa_nn,
-        "kappa_nn_hidden": args.kappa_nn_hidden,
         "soft": args.soft,
         "bound_initial_state": args.bound_initial_state,
         "terminal_cost": args.terminal_cost,

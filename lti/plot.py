@@ -24,7 +24,7 @@ sys.path.append(str(repo_dir))
 
 from env import ConstrainedLtiEnv as Env
 
-from util.nn import ConLtiKappaNN, nn2function
+from util.nn import nn2function
 from util.visualization import (
     load_file,
     plot_population,
@@ -111,17 +111,10 @@ def plot_safety(
         The names of the simulations to use in the plot.
     """
     fig = plt.figure(constrained_layout=True)
-    gs = GridSpec(3, 4, fig)
-    axs_h = [fig.add_subplot(gs[i, j]) for i, j in ((0, 0), (0, 2), (1, 0), (1, 2))]
-    axs_gamma = [fig.add_subplot(gs[i, j]) for i, j in ((0, 1), (0, 3), (1, 1), (1, 3))]
+    gs = GridSpec(3, 2, fig)
+    axs_h = [fig.add_subplot(gs[i // 2, i % 2]) for i in range(4)]
     ax_viol_prob = fig.add_subplot(gs[2, :])
     ax_viol_tot = ax_viol_prob.twinx()
-
-    plot_gamma = any(
-        any(w.startswith("kappann.") for w in d.get("weights", {})) for d in data
-    )
-    kappann_cache = {}
-    plot_gamma = False
 
     env = Env(0)
     ns = env.ns
@@ -144,7 +137,7 @@ def plot_safety(
         for a, e in np.ndindex((n_ag, n_ep)):
             h_ = h[a, e]
             violating_ = violating[a, e]
-            for j, ax_h, ax_gamma in zip(range(nc), axs_h, axs_gamma):
+            for j, ax_h in zip(range(nc), axs_h):
                 h__ = h_[:, j]
                 viol__ = violating_[:, j]
                 ax_h.plot(time, h__, c)
@@ -158,36 +151,6 @@ def plot_safety(
         tot_se = sem(tot_violations)
         violations_data.append((prob_mean, prob_se, tot_mean, tot_se))
 
-        # plot the class Kappa function if available
-        plot_gamma_ = any(w.startswith("kappann.") for w in datum.get("weights", {}))
-        if not plot_gamma_:
-            continue
-
-        plot_gamma = True
-        kweights = {
-            n: w for n, w in datum["weights"].items() if n.startswith("kappann.")
-        }
-        features = tuple(
-            w.shape[-1] for n, w in kweights.items() if n.endswith(".bias")
-        )
-        assert features[-1] == nc, "Invalid output features."
-        if features in kappann_cache:
-            nnfunc = kappann_cache[features]
-        else:
-            kappann = ConLtiKappaNN(Env.ns + nc, features[:-1], nc)
-            nnfunc = nn2function(kappann, "kappann")
-            kappann_cache[features] = nnfunc
-
-        for a in range(n_ag):
-            kweights_ = {n: w[a] for n, w in kweights.items()}
-            for e in range(n_ep):
-                states_ = states[a, e]
-                h_ = h[a, e]
-                context = np.concat((states_, h_), 1).T
-                gammas = nnfunc(context=context, **kweights_)["gamma"].toarray()
-                for ax_gamma, gamma in zip(axs_gamma, gammas):
-                    ax_gamma.plot(time, gamma, c)
-
     width = 0.4
     prob_mean, prob_se, viol_mean, viol_se = zip(*violations_data)
     x = np.arange(len(names))
@@ -198,19 +161,11 @@ def plot_safety(
     )
     ax_viol_tot.bar_label(rects, padding=3)
 
-    for i, (ax_h, ax_gamma) in enumerate(zip(axs_h, axs_gamma)):
+    for i, ax_h in enumerate(axs_h):
         ax_h.set_xlabel("$k$")
         ax_h.set_ylabel(f"$h_{i}$")
-        if plot_gamma:
-            ax_gamma.set_xlabel("$k$")
-            ax_gamma.set_ylabel(f"$\\gamma_{i}$")
-            ax_gamma.axhline(0.0, color="k", ls="--")
-            ax_gamma.axhline(1.0, color="k", ls="--")
-        else:
-            ax_gamma.set_axis_off()
         if i in {0, 1}:
             ax_h._label_outer_xaxis(skip_non_rectangular_axes=False)
-            ax_gamma._label_outer_xaxis(skip_non_rectangular_axes=False)
     ax_viol_prob.set_xticks(x + width / 2, names)
     ax_viol_prob.set_ylabel("Num. of Violations (%)")
     ax_viol_tot.set_ylabel("Tot. Violations")

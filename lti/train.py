@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 import numpy as np
 import numpy.typing as npt
-from csnn import init_parameters, set_sym_type
+from csnn import set_sym_type
 from joblib import Parallel, delayed
 from mpcrl import LearnableParameter, LearnableParametersDict, RlLearningAgent
 from mpcrl.util.seeding import RngType
@@ -19,7 +19,6 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from controllers.scmpc import create_scmpc
 from env import ConstrainedLtiEnv as Env
 
-from util.defaults import KAPPA_NN_HIDDEN
 from util.wrappers import RecordSolverTime, SuppressOutput
 
 
@@ -114,7 +113,7 @@ def train_one_agent(
 
     # create the SCMPC controller
     set_sym_type("MX")
-    scmpc, pwqnn, kappann = create_scmpc(**scmpc_kwargs, env=env)
+    scmpc, pwqnn = create_scmpc(**scmpc_kwargs, env=env)
     scmpc = RecordSolverTime(scmpc)
     if scmpc.unwrapped._solver_plugin == "qpoases":
         scmpc = SuppressOutput(scmpc)
@@ -133,11 +132,6 @@ def train_one_agent(
             learnable_pars_.append(
                 LearnableParameter(name, weight.shape, weight, lb, ub, sym_pars[name])
             )
-    if kappann is not None:
-        learnable_pars_.extend(
-            LearnableParameter(name, weight.shape, weight, sym=sym_pars[name])
-            for name, weight in init_parameters(kappann, prefix="kappann", seed=rng)
-        )
     learnable_pars = LearnableParametersDict(learnable_pars_)
 
     # instantiate and wrap the agent
@@ -234,18 +228,6 @@ if __name__ == "__main__":
         help="Whether to use discrete-time CBF constraints in the SCMPC controller.",
     )
     group.add_argument(
-        "--use-kappa-nn",
-        action="store_true",
-        help="Whether to use the NN to also provide CBF class Kappa function.",
-    )
-    group.add_argument(
-        "--kappa-nn-hidden",
-        type=int,
-        default=KAPPA_NN_HIDDEN,
-        nargs="*",
-        help="The number of hidden units for the class Kappa NN function, if used.",
-    )
-    group.add_argument(
         "--soft",
         action="store_true",
         help="Whether to use soft constraints in the SCMPC controller.",
@@ -312,8 +294,6 @@ if __name__ == "__main__":
     scmpc_kwargs = {
         "horizon": args.horizon,
         "dcbf": args.dcbf,
-        "use_kappa_nn": args.use_kappa_nn,
-        "kappa_nn_hidden": args.kappa_nn_hidden,
         "soft": args.soft,
         "bound_initial_state": args.bound_initial_state,
         "terminal_cost": args.terminal_cost,
