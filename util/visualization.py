@@ -398,7 +398,10 @@ def plot_solver_times(
 
 
 def plot_training(
-    data: Collection[dict[str, npt.NDArray[np.floating]]], *_: Any, **__: Any
+    data: Collection[dict[str, npt.NDArray[np.floating]]],
+    pgfplotstables: bool = False,
+    *_: Any,
+    **__: Any,
 ) -> None:
     """Plots the training results of the simulations. This plot does not show anything
     if the data does not contain training results.
@@ -409,6 +412,8 @@ def plot_training(
         The dictionaries from different simulations, each potentially containing the
         keys `"updates_history"`, `"td_errors"`, or `"policy_performances"`, or
         `"evals"`.
+    pgfplotstables : bool, optional
+        If true, saves the plotted data to `.dat` files for PGFPLOTS.
     """
     param_names = set()
     for datum in data:
@@ -482,6 +487,21 @@ def plot_training(
                     plot_population(
                         ax, updates, param[..., idx], axis=0, color=c, alpha=alpha
                     )
+
+                # if requested, save the gamma values for PGFPLOTS
+                if pgfplotstables and name == "gamma":
+                    mean_, mean_ = param.mean(0), param.std(0)
+                    table = np.concat((updates.reshape(-1, 1), mean_, mean_), 1)
+
+                    makedirs("pgfplotstables", exist_ok=True)
+                    with open(f"pgfplotstables/gamma_{i}.dat", "w") as f:
+                        header = " ".join(
+                            f"gamma{i}-{cat}"
+                            for cat in ("avg", "std")
+                            for i in range(n_params)
+                        )
+                        f.write("episode " + header + "\n")
+                        np.savetxt(f, table, fmt=["%d"] + ["%.6f"] * 2 * n_params)
 
     if any_td:
         ax_td.set_xlabel("Episode")

@@ -436,7 +436,7 @@ if __name__ == "__main__":
     if args.all or args.solver_time:
         plot_solver_times(data, unique_names, pgfplotstables)
     if args.all or args.training:
-        plot_training(data, unique_names)
+        plot_training(data, pgfplotstables)
     if args.all or args.terminal_cost:
         plot_terminal_cost_evolution(data, sim_args, unique_names, pgfplotstables)
     if plt.get_fignums():
