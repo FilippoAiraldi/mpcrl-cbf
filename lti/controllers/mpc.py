@@ -84,7 +84,7 @@ def create_mpc(
     nc = h0.size1()
     if dcbf:
         h = env.safety_constraints(x[:, 1:])
-        gamma = np.full((nc, 1), DCBF_GAMMA)
+        gamma = mpc.parameter("gamma", (nc,))
         decays = cs.hcat(
             [cs.power(1 - gamma[i, 0], range(1, horizon + 1)) for i in range(nc)]
         )
@@ -170,6 +170,8 @@ def get_mpc_controller(*args: Any, seed: RngType = None, **kwargs: Any) -> tuple
         nn_weights = dict(pwqnn.init_parameters(prefix="pwqnn", seed=seed))
         sym_weights_.update((k, mpc.parameters[k]) for k in nn_weights)
         num_weights_.update(nn_weights)
+    sym_weights_["gamma"] = mpc.parameters["gamma"]
+    num_weights_["gamma"] = np.full(sym_weights_["gamma"].shape, DCBF_GAMMA)
     sym_weights = cs.vvcat(sym_weights_.values())
     num_weights = cs.vvcat(num_weights_.values())
 

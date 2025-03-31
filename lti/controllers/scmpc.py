@@ -88,7 +88,7 @@ def create_scmpc(
     nc = h0.size1()
     if dcbf:
         h = env.safety_constraints(x[:, 1:])
-        gamma = np.full((nc, 1), DCBF_GAMMA)
+        gamma = scmpc.parameter("gamma", (nc,))
         decays = cs.hcat(
             [cs.power(1 - gamma[i, 0], range(1, horizon + 1)) for i in range(nc)]
         )
@@ -182,16 +182,17 @@ def get_scmpc_controller(
 
     # group its NN parameters (if any) into a vector and assign numerical values to them
     sym_weights_, num_weights_ = {}, {}
+    if weights is None:
+        weights = {}
     if pwqnn is not None:
-        weight_source = (
-            pwqnn.init_parameters(prefix="pwqnn", seed=seed)
-            if weights is None
-            else weights.items()
-        )
-        for n, weight in weight_source:
-            if n in scmpc.parameters:
-                sym_weights_[n] = scmpc.parameters[n]
-                num_weights_[n] = weight
+        nn_weights_ = dict(pwqnn.init_parameters(prefix="pwqnn", seed=seed))
+        for k, v in nn_weights_.items():
+            sym_weights_[k] = scmpc.parameters[k]
+            num_weights_[k] = weights.get(k, v)
+    sym_weights_["gamma"] = scmpc.parameters["gamma"]
+    num_weights_["gamma"] = weights.get(
+        "gamma", np.full(sym_weights_["gamma"].shape, DCBF_GAMMA)
+    )
     sym_weights = cs.vvcat(sym_weights_.values())
     num_weights = cs.vvcat(num_weights_.values())
     disturbances = cs.vvcat(scmpc.disturbances.values())  # cannot do otherwise

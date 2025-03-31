@@ -19,6 +19,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from controllers.scmpc import create_scmpc
 from env import ConstrainedLtiEnv as Env
 
+from util.defaults import DCBF_GAMMA
 from util.wrappers import RecordSolverTime, SuppressOutput
 
 
@@ -119,7 +120,7 @@ def train_one_agent(
         scmpc = SuppressOutput(scmpc)
 
     # initialize learnable parameters
-    sym_pars = scmpc.parameters
+    pars = scmpc.parameters
     learnable_pars_ = []
     if pwqnn is not None:
         for name, weight in pwqnn.init_parameters(prefix="pwqnn", seed=rng):
@@ -130,8 +131,13 @@ def train_one_agent(
             else:
                 lb, ub = -np.inf, np.inf
             learnable_pars_.append(
-                LearnableParameter(name, weight.shape, weight, lb, ub, sym_pars[name])
+                LearnableParameter(name, weight.shape, weight, lb, ub, pars[name])
             )
+    learnable_pars_.append(
+        LearnableParameter(
+            "gamma", pars["gamma"].shape, DCBF_GAMMA, 0, 1, sym=pars["gamma"]
+        )
+    )
     learnable_pars = LearnableParametersDict(learnable_pars_)
 
     # instantiate and wrap the agent
