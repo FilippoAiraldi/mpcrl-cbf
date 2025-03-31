@@ -3,7 +3,7 @@ from typing import Literal, TypeVar
 
 import casadi as cs
 import numpy as np
-from csnn import Linear, Module, ReLU
+from csnn import Linear, Module, ReLU, Tanh
 from csnn.convex import PsdNN, PwqNN
 from csnn.convex.psd import _reshape_mat
 from csnn.feedforward import Mlp
@@ -73,15 +73,14 @@ class ConLtiKappaNN(Module[SymType]):
         self, in_features: int, hidden_features: Sequence[int], output_features: int
     ) -> None:
         super().__init__()
-        self.normalization = DynTanh(in_features)
         self.mlp = Mlp(
             (in_features, *hidden_features, output_features),
-            [ReLU] * len(hidden_features) + [None],
+            [ReLU] * len(hidden_features) + [Tanh],
         )
 
     def forward(self, input: SymType) -> SymType:
-        gamma_unscaled = self.mlp(self.normalization(input))
-        return (cs.tanh(gamma_unscaled) + 1) / 2
+        gamma_unscaled = self.mlp(input)
+        return (gamma_unscaled + 1) / 2
 
 
 class QuadrotorNN(PsdNN):

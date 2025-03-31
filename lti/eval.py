@@ -160,7 +160,7 @@ if __name__ == "__main__":
         "--kappa-nn-hidden",
         type=int,
         default=KAPPA_NN_HIDDEN,
-        nargs="+",
+        nargs="*",
         help="The number of hidden units for the class Kappa NN function, if used.",
     )
     group.add_argument(
