@@ -170,8 +170,9 @@ def get_mpc_controller(*args: Any, seed: RngType = None, **kwargs: Any) -> tuple
         nn_weights = dict(pwqnn.init_parameters(prefix="pwqnn", seed=seed))
         sym_weights_.update((k, mpc.parameters[k]) for k in nn_weights)
         num_weights_.update(nn_weights)
-    sym_weights_["gamma"] = mpc.parameters["gamma"]
-    num_weights_["gamma"] = np.full(sym_weights_["gamma"].shape, DCBF_GAMMA)
+    if "gamma" in mpc.parameters:
+        sym_weights_["gamma"] = mpc.parameters["gamma"]
+        num_weights_["gamma"] = np.full(sym_weights_["gamma"].shape, DCBF_GAMMA)
     sym_weights = cs.vvcat(sym_weights_.values())
     num_weights = cs.vvcat(num_weights_.values())
 

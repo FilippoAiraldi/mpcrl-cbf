@@ -189,10 +189,11 @@ def get_scmpc_controller(
         for k, v in nn_weights_.items():
             sym_weights_[k] = scmpc.parameters[k]
             num_weights_[k] = weights.get(k, v)
-    sym_weights_["gamma"] = scmpc.parameters["gamma"]
-    num_weights_["gamma"] = weights.get(
-        "gamma", np.full(sym_weights_["gamma"].shape, DCBF_GAMMA)
-    )
+    if "gamma" in scmpc.parameters:
+        sym_weights_["gamma"] = scmpc.parameters["gamma"]
+        num_weights_["gamma"] = weights.get(
+            "gamma", np.full(sym_weights_["gamma"].shape, DCBF_GAMMA)
+        )
     sym_weights = cs.vvcat(sym_weights_.values())
     num_weights = cs.vvcat(num_weights_.values())
     disturbances = cs.vvcat(scmpc.disturbances.values())  # cannot do otherwise
