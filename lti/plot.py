@@ -24,7 +24,7 @@ sys.path.append(str(repo_dir))
 
 from env import ConstrainedLtiEnv as Env
 
-from util.nn import nn2function
+from util.nn import ConLtiKappaNN, nn2function
 from util.visualization import (
     load_file,
     plot_population,
@@ -57,27 +57,22 @@ def plot_states_and_actions(
         The names of the simulations to use in the plot.
     """
     fig = plt.figure(constrained_layout=True)
-    gs = GridSpec(3, 2, fig)
+    gs = GridSpec(2, 2, fig)
     ax1 = fig.add_subplot(gs[:2, 0])
     ax2 = fig.add_subplot(gs[0, 1])
     ax3 = fig.add_subplot(gs[1, 1], sharex=ax2)
-    ax4 = fig.add_subplot(gs[2, :])
-    ax4_twin = ax4.twinx()
 
     env = Env(0)
     ns = env.ns
     na = env.na
-    nc = env.safety_constraints.size1_out(0)
     x_max = env.x_soft_bound
     ax1.add_patch(Rectangle((-x_max, -x_max), 2 * x_max, 2 * x_max, fill=False))
-
-    violations_data = []
 
     for i, datum in enumerate(data):
         actions = datum["actions"]  # n_agents x n_ep x timesteps x na
         states = datum["states"]  # n_agents x n_ep x timesteps + 1 x ns
         c = f"C{i}"
-        n_ag, n_ep, n_ts = actions.shape[:3]
+        n_ts = actions.shape[2]
         time = np.arange(n_ts)
 
         # flatten the first two axes as we do not distinguish between different agents
@@ -90,9 +85,72 @@ def plot_states_and_actions(
             ax2.step(time, action_traj[:, 0], c, where="post")
             ax3.step(time, action_traj[:, 1], c, where="post")
 
-        states__ = states[..., :-1, :].reshape(-1, ns).T
+    ax1.set_xlabel("$x_1$")
+    ax1.set_ylabel("$x_2$")
+    ax1.set_aspect("equal")
+    ax2.set_ylabel("$u_1$")
+    ax3.set_ylabel("$u_2$")
+    ax3.set_xlabel("$k$")
+
+
+def plot_safety(
+    data: Collection[dict[str, npt.NDArray[np.floating]]],
+    names: Collection[str] | None = None,
+    *_: Any,
+    **__: Any,
+) -> None:
+    """Plots the safety of the state trajectories w.r.t. the constraints. This plot does
+    not distinguish between different agents as it plots them all together.
+
+    Parameters
+    ----------
+    data : collection of dictionaries (str, arrays)
+        The dictionaries from different simulations, each containing the key `"states"`,
+        as well as optionally `"actions"` and Kappa NN weights in `"weights"`.
+    names : collection of str, optional
+        The names of the simulations to use in the plot.
+    """
+    fig = plt.figure(constrained_layout=True)
+    gs = GridSpec(3, 4, fig)
+    axs_h = [fig.add_subplot(gs[i, j]) for i, j in ((0, 0), (0, 2), (1, 0), (1, 2))]
+    axs_gamma = [fig.add_subplot(gs[i, j]) for i, j in ((0, 1), (0, 3), (1, 1), (1, 3))]
+    ax_viol_prob = fig.add_subplot(gs[2, :])
+    ax_viol_tot = ax_viol_prob.twinx()
+
+    plot_gamma = any(
+        any(w.startswith("kappann.") for w in d.get("weights", {})) for d in data
+    )
+    kappann_cache = {}
+    plot_gamma = False
+
+    env = Env(0)
+    ns = env.ns
+    nc = env.safety_constraints.size1_out(0)
+    violations_data = []
+
+    for i, datum in enumerate(data):
+        actions = datum["actions"]  # n_agents x n_ep x timesteps x na
+        states = datum["states"]  # n_agents x n_ep x timesteps + 1 x ns
+        c = f"C{i}"
+        n_ag, n_ep, n_ts = actions.shape[:3]
+        n_ts += 1  # account for last state
+        time = np.arange(n_ts)
+
+        # plot the safety constraints and compute violations
+        states__ = states.reshape(-1, ns).T
         h = env.safety_constraints(states__).toarray().T.reshape(n_ag, n_ep, n_ts, nc)
-        prob_violations = (h < 0.0).any(3).mean((1, 2)) * 100.0
+        violating = h < 0.0
+
+        for a, e in np.ndindex((n_ag, n_ep)):
+            h_ = h[a, e]
+            violating_ = violating[a, e]
+            for j, ax_h, ax_gamma in zip(range(nc), axs_h, axs_gamma):
+                h__ = h_[:, j]
+                viol__ = violating_[:, j]
+                ax_h.plot(time, h__, c)
+                ax_h.plot(time[viol__], h__[viol__], "r", ls="none", marker="x", ms=3)
+
+        prob_violations = violating.any(3).mean((1, 2)) * 100.0
         prob_mean = prob_violations.mean(0)
         prob_se = sem(prob_violations)
         tot_violations = np.maximum(0, -h).sum((2, 3)).mean(1)
@@ -100,25 +158,62 @@ def plot_states_and_actions(
         tot_se = sem(tot_violations)
         violations_data.append((prob_mean, prob_se, tot_mean, tot_se))
 
-    prob_mean, prob_se, viol_mean, viol_se = zip(*violations_data)
+        # plot the class Kappa function if available
+        plot_gamma_ = any(w.startswith("kappann.") for w in datum.get("weights", {}))
+        if not plot_gamma_:
+            continue
+
+        plot_gamma = True
+        kweights = {
+            n: w for n, w in datum["weights"].items() if n.startswith("kappann.")
+        }
+        features = tuple(
+            w.shape[-1] for n, w in kweights.items() if n.endswith(".bias")
+        )
+        assert features[-1] == nc, "Invalid output features."
+        if features in kappann_cache:
+            nnfunc = kappann_cache[features]
+        else:
+            kappann = ConLtiKappaNN(Env.ns + nc, features[:-1], nc)
+            nnfunc = nn2function(kappann, "kappann")
+            kappann_cache[features] = nnfunc
+
+        for a in range(n_ag):
+            kweights_ = {n: w[a] for n, w in kweights.items()}
+            for e in range(n_ep):
+                states_ = states[a, e]
+                h_ = h[a, e]
+                context = np.concat((states_, h_), 1).T
+                gammas = nnfunc(context=context, **kweights_)["gamma"].toarray()
+                for ax_gamma, gamma in zip(axs_gamma, gammas):
+                    ax_gamma.plot(time, gamma, c)
+
     width = 0.4
+    prob_mean, prob_se, viol_mean, viol_se = zip(*violations_data)
     x = np.arange(len(names))
-    rects = ax4.bar(x, prob_mean, width, yerr=prob_se, capsize=5, color="C0")
-    ax4.bar_label(rects, padding=3)
-    rects = ax4_twin.bar(
+    rects = ax_viol_prob.bar(x, prob_mean, width, yerr=prob_se, capsize=5, color="C0")
+    ax_viol_prob.bar_label(rects, padding=3)
+    rects = ax_viol_tot.bar(
         x + width, viol_mean, width, yerr=viol_se, capsize=5, color="C1"
     )
-    ax4_twin.bar_label(rects, padding=3)
+    ax_viol_tot.bar_label(rects, padding=3)
 
-    ax1.set_xlabel("$x_1$")
-    ax1.set_ylabel("$x_2$")
-    ax1.set_aspect("equal")
-    ax2.set_ylabel("$u_1$")
-    ax3.set_ylabel("$u_2$")
-    ax3.set_xlabel("$k$")
-    ax4.set_ylabel("Num. of Violations (%)")
-    ax4_twin.set_ylabel("Tot. Violations")
-    ax4.set_xticks(x + width / 2, names)
+    for i, (ax_h, ax_gamma) in enumerate(zip(axs_h, axs_gamma)):
+        ax_h.set_xlabel("$k$")
+        ax_h.set_ylabel(f"$h_{i}$")
+        if plot_gamma:
+            ax_gamma.set_xlabel("$k$")
+            ax_gamma.set_ylabel(f"$\\gamma_{i}$")
+            ax_gamma.axhline(0.0, color="k", ls="--")
+            ax_gamma.axhline(1.0, color="k", ls="--")
+        else:
+            ax_gamma.set_axis_off()
+        if i in {0, 1}:
+            ax_h._label_outer_xaxis(skip_non_rectangular_axes=False)
+            ax_gamma._label_outer_xaxis(skip_non_rectangular_axes=False)
+    ax_viol_prob.set_xticks(x + width / 2, names)
+    ax_viol_prob.set_ylabel("Num. of Violations (%)")
+    ax_viol_tot.set_ylabel("Tot. Violations")
 
 
 def plot_terminal_cost_evolution(
@@ -315,6 +410,11 @@ if __name__ == "__main__":
         help="Plots the state and action trajectories.",
     )
     parser.add_argument(
+        "--safety",
+        action="store_true",
+        help="Plots safety metrics w.r.t. the constraints.",
+    )
+    parser.add_argument(
         "--returns",
         action="store_true",
         help="Plots the returns across episodes.",
@@ -344,6 +444,7 @@ if __name__ == "__main__":
     if not any(
         (
             args.state_action,
+            args.safety,
             args.returns,
             args.solver_time,
             args.training,
@@ -368,6 +469,8 @@ if __name__ == "__main__":
     pgfplotstables = args.pgfplotstables
     if args.all or args.state_action:
         plot_states_and_actions(data, unique_names)
+    if args.all or args.safety:
+        plot_safety(data, unique_names)
     if args.all or args.returns:
         plot_returns(data, unique_names, pgfplotstables)
     if args.all or args.solver_time:
