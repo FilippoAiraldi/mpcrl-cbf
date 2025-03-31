@@ -32,6 +32,10 @@ and then install the required packages by, e.g., running
 pip install -r requirements.txt
 ```
 
+Note a proper installation of Gurobi is required to run the constrained LTI experiment.
+If not available, feel free to change the solver from Gurobi to an open-source or free
+one (e.g., qpOASES, OSQP, etc.) in, e.g., `lti/controllers/scmpc.py`.
+
 ### Structure
 
 The repository code is structured in the following way:

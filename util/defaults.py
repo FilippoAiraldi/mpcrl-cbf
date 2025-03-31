@@ -59,7 +59,7 @@ SOLVER_OPTS = {
 }
 TIME_MEAS = "t_proc_total"  # or t_wall_total
 
-DCBF_GAMMA = 0.95
+DCBF_GAMMA = 0.7
 SAFETY_BACKOFF_SQRT = 1e-1
 
 PWQNN_HIDDEN = 16
