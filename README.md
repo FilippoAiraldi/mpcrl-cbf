@@ -62,7 +62,7 @@ simpler) CBF-based controllers.
 
 ---
 
-## Experiments
+## Numerical Experiments
 
 Training and evaluation simulations can easily be launched via the command below. The
 provided arguments are set to reproduce the same main results found in the paper,
@@ -116,18 +116,18 @@ Here we show how to plot the results of the simulations.
 To plot the results of a training simulation, run
 
 ```bash
-python lti/plot.py ${train_scmpcrl_fn} --training --terminal-cost
+python lti/plot.py ${train_scmpcrl_fn} --training --terminal-cost --safety
 ```
 
 The `training` flag will show the evolution of the temporal difference error during
 learning as well as the evolution of each parameter of the MPC parametrisation. The
 `terminal-cost` flag will show the evolution of the terminal cost-to-go function as the
-learning progresses (takes a bit longer). More interesting is the plotting of the
-evaluation results after training. To compare it with the non-learning MPC controller,
-run
+learning progresses (takes a bit longer). The `safety` flag will render plots on the safety constraint values and the empirical probability of violations recorded in the
+simulation. More interesting is the plotting of the evaluation results after training.
+To compare it with the non-learning MPC controller, run
 
 ```bash
-python lti/plot.py ${eval_scmpc_fn} ${eval_scmpcrl_fn} --returns --solver-time --state-action
+python lti/plot.py ${eval_scmpc_fn} ${eval_scmpcrl_fn} --returns --solver-time --state-action --safety
 ```
 
 The `returns` flag will show the returns obtained by the two controllers, side by side.

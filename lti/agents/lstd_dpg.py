@@ -47,6 +47,8 @@ def get_lstd_dpg_agent(
     *_: Any,
     **__: Any,
 ) -> ConstrainedLtiEnvLstdDpgAgent:
+    # NOTE: this agent was not properly tuned for the constrained LTI env, so use it at
+    # your own risk!
     return ConstrainedLtiEnvLstdDpgAgent(
         mpc=scmpc,
         discount_factor=1.0,
