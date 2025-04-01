@@ -490,8 +490,8 @@ def plot_training(
 
                 # if requested, save the gamma values for PGFPLOTS
                 if pgfplotstables and name == "gamma":
-                    mean_, mean_ = param.mean(0), param.std(0)
-                    table = np.concat((updates.reshape(-1, 1), mean_, mean_), 1)
+                    mean_, std_ = param.mean(0), param.std(0)
+                    table = np.concat((updates.reshape(-1, 1), mean_, std_), 1)
 
                     makedirs("pgfplotstables", exist_ok=True)
                     with open(f"pgfplotstables/gamma_{i}.dat", "w") as f:
