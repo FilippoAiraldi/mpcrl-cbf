@@ -12,8 +12,14 @@ learnable terminal cost-to-go function to reduce computational complexity.
 If you find the paper or this repository useful, please consider citing:
 
 ```bibtex
-TODO
+@article{airaldi2024nonmyopic,
+  title = {Probabilistically safe and efficient model-based Reinforcement Learning},
+  year = {2025},
+  author = {Filippo Airaldi and Bart De Schutter and Azita Dabiri},
+  journal = {arXiv preprint arXiv:2504.00626},
+}
 ```
+
 
 ---
 
