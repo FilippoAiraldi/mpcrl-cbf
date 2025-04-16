@@ -1,5 +1,9 @@
 # MPC-RL with Probabilistic CBF
 
+[![Source Code License](https://img.shields.io/badge/license-GPL-blueviolet)](https://github.com/FilippoAiraldi/learning-safely/blob/release/LICENSE)
+![Python 3.12.6](https://img.shields.io/badge/python-3.12.6-green.svg)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
 This repository contains the source code used to produce the results in TODO.
 
 In this work, we propose to tackle safety-critical stochastic Reinforcement Learning
