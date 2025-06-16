@@ -4,8 +4,6 @@
 ![Python 3.12.6](https://img.shields.io/badge/python-3.12.6-green.svg)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-This repository contains the source code used to produce the results in TODO.
-
 In this work, we propose to tackle safety-critical stochastic Reinforcement Learning
 (RL) tasks via a model-based sample-based approach. The proposed method integrates into
 a Model Predictive Control (MPC) framework a probabilistic Control Barrier Function
