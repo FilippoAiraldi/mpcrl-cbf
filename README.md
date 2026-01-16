@@ -11,14 +11,16 @@ a Model Predictive Control (MPC) framework a probabilistic Control Barrier Funct
 render the problem tractable, a sample-based approximation is introduced alongside a
 learnable terminal cost-to-go function to reduce computational complexity.
 
-If you find the paper or this repository useful, please consider citing:
+The paper can be found [here](https://ieeexplore.ieee.org/document/11312525). If you find the paper or this repository useful, please consider citing:
 
 ```bibtex
-@article{airaldi2025probabilistically,
-  title = {Probabilistically safe and efficient model-based Reinforcement Learning},
-  year = {2025},
-  author = {Filippo Airaldi and Bart De Schutter and Azita Dabiri},
-  journal = {arXiv preprint arXiv:2504.00626},
+@inproceedings{airaldi2025probabilistically,
+  author={Airaldi, Filippo and Schutter, Bart De and Dabiri, Azita},
+  booktitle={2025 IEEE 64th Conference on Decision and Control (CDC)}, 
+  title={Probabilistically safe and efficient model-based reinforcement learning}, 
+  year={2025},
+  pages={5853-5860},
+  doi={10.1109/CDC57313.2025.11312525}
 }
 ```
 
